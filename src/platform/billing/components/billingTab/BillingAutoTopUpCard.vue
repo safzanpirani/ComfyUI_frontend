@@ -59,7 +59,7 @@
             variant="muted-textonly"
             size="icon-sm"
           >
-            <i class="icon-[lucide--info] size-4" aria-hidden="true" />
+            <i class="icon-[lucide--info]" aria-hidden="true" />
           </Button>
         </p>
       </div>
@@ -73,7 +73,7 @@
         @click="track"
       >
         {{ $t(view.status.action.label) }}
-        <i class="icon-[lucide--external-link] size-4" aria-hidden="true" />
+        <i class="icon-[lucide--external-link]" aria-hidden="true" />
       </Button>
     </div>
   </section>

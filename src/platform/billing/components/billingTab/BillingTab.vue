@@ -69,7 +69,7 @@
         @click="trackHandoff"
       >
         {{ $t(`workspacePanel.billingTab.handoff.${handoffAudience}.action`) }}
-        <i class="icon-[lucide--external-link] size-4" aria-hidden="true" />
+        <i class="icon-[lucide--external-link]" aria-hidden="true" />
       </Button>
     </section>
   </div>

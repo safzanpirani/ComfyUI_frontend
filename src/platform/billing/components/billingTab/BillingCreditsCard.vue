@@ -14,7 +14,7 @@
         variant="muted-textonly"
         size="icon-sm"
       >
-        <i class="icon-[lucide--info] size-4" aria-hidden="true" />
+        <i class="icon-[lucide--info]" aria-hidden="true" />
       </Button>
     </h3>
 
@@ -87,7 +87,7 @@
               variant="muted-textonly"
               size="icon-sm"
             >
-              <i class="icon-[lucide--info] size-4" aria-hidden="true" />
+              <i class="icon-[lucide--info]" aria-hidden="true" />
             </Button>
           </span>
           <span
@@ -109,7 +109,7 @@
                 variant="muted-textonly"
                 size="icon-sm"
               >
-                <i class="icon-[lucide--info] size-4" aria-hidden="true" />
+                <i class="icon-[lucide--info]" aria-hidden="true" />
               </Button>
             </span>
             <span
