@@ -46,7 +46,7 @@
       :packs="extensionStore.extensionPackPaths"
       :enabled-by-path="editingEnabledExtensionPacks"
       :disabled="isSavingExtensionPacks"
-      @set-enabled="setExtensionPackEnabled"
+      @set-enabled="handleExtensionPackEnabled"
     />
     <ExtensionListTable
       v-model:direction="nameSortDirection"
@@ -73,6 +73,7 @@ import Message from '@/components/ui/message/Message.vue'
 import SearchInput from '@/components/ui/search-input/SearchInput.vue'
 import { filterByQuery, sortByText } from '@/components/ui/table/tableUtils'
 import type { TableSortDirection } from '@/components/ui/table/tableUtils'
+import { useToast } from '@/components/ui/toast/toastStore'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import ExtensionListTable from '@/platform/settings/components/ExtensionListTable.vue'
 import ExtensionPackTable from '@/platform/settings/components/ExtensionPackTable.vue'
@@ -97,6 +98,7 @@ const nameSortDirection = ref<TableSortDirection | null>(null)
 
 const extensionStore = useExtensionStore()
 const settingStore = useSettingStore()
+const toast = useToast()
 
 const editingEnabledExtensions = ref<Record<string, boolean>>({})
 const editingEnabledExtensionPacks = ref<Record<string, boolean>>({})
@@ -232,15 +234,29 @@ async function setExtensionPackEnabled(path: string, enabled: boolean) {
       'Comfy.Extension.DisabledPacks',
       disabledExtensionPackPaths()
     )
-  } catch (error) {
+    return true
+  } catch {
     editingEnabledExtensionPacks.value[path] = previousEnabled
-    await settingStore.set(
-      'Comfy.Extension.DisabledPacks',
-      previousDisabledPaths
-    )
-    throw error
+    try {
+      await settingStore.set(
+        'Comfy.Extension.DisabledPacks',
+        previousDisabledPaths
+      )
+    } catch {
+      return false
+    }
+    return false
   } finally {
     isSavingExtensionPacks.value = false
+  }
+}
+
+async function handleExtensionPackEnabled(path: string, enabled: boolean) {
+  if ((await setExtensionPackEnabled(path, enabled)) === false) {
+    toast.error(t('g.error'), {
+      description: t('g.extensionPackSaveFailed'),
+      duration: 5000
+    })
   }
 }
 
@@ -286,7 +302,7 @@ const disableThirdPartyExtensions = async () => {
 const applyChanges = () => {
   const url = new URL(window.location.href)
   url.searchParams.delete('safe')
-  window.history.replaceState(null, '', url)
+  window.history.replaceState(window.history.state, '', url)
   window.location.reload()
 }
 

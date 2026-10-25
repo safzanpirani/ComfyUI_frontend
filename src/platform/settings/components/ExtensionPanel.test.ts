@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { testI18n } from '@/utils/__tests__/testI18n'
+import { useToast } from '@/components/ui/toast/toastStore'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { useExtensionStore } from '@/stores/extensionStore'
 
@@ -267,6 +268,41 @@ describe('ExtensionPanel', () => {
     await vi.waitFor(() => expect(packSwitch).toBeEnabled())
   })
 
+  it('restores the pack and notifies when persistence fails', async () => {
+    const user = userEvent.setup()
+    const settingStore = useSettingStore()
+    useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
+    const setSetting = vi
+      .spyOn(settingStore, 'set')
+      .mockRejectedValue(new Error('setting unavailable'))
+
+    renderPanel()
+    const packSwitch = screen.getByRole('switch', {
+      name: 'Extension pack a'
+    })
+    await user.click(packSwitch)
+
+    await vi.waitFor(() => expect(packSwitch).toBeChecked())
+    expect(setSetting).toHaveBeenNthCalledWith(
+      1,
+      'Comfy.Extension.DisabledPacks',
+      ['/extensions/a/']
+    )
+    expect(setSetting).toHaveBeenNthCalledWith(
+      2,
+      'Comfy.Extension.DisabledPacks',
+      []
+    )
+    expect(useToast().toasts).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        title: 'Error',
+        description:
+          'The extension pack change was not saved. Reload the page before trying again.'
+      })
+    )
+  })
+
   it('decodes pack names for display and accessibility', async () => {
     const user = userEvent.setup()
     useExtensionStore().loadExtensionPackPaths(['/extensions/My%20Pack/'], [])
@@ -285,7 +321,8 @@ describe('ExtensionPanel', () => {
     useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
     vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
     const reload = vi.spyOn(window.location, 'reload').mockReturnValue()
-    window.history.replaceState(null, '', '/?safe')
+    const historyState = { back: '/workflows' }
+    window.history.replaceState(historyState, '', '/?safe')
 
     renderPanel()
     await user.click(screen.getByRole('switch', { name: 'Extension pack a' }))
@@ -294,6 +331,7 @@ describe('ExtensionPanel', () => {
     )
 
     expect(window.location.search).toBe('')
+    expect(window.history.state).toEqual(historyState)
     expect(reload).toHaveBeenCalledOnce()
   })
 })

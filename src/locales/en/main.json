@@ -78,6 +78,7 @@
     "extensionPack": "Extension Pack",
     "extensionPacks": "Extension Packs",
     "extensionPackToggle": "Extension pack {name}",
+    "extensionPackSaveFailed": "The extension pack change was not saved. Reload the page before trying again.",
     "reloadToApplyChanges": "Reload to apply changes",
     "insert": "Insert",
     "systemInfo": "System Info",
