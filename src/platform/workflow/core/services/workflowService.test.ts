@@ -4,7 +4,7 @@ import { useCanvasStore } from '@/renderer/core/canvas/canvasStore' // oxlint-di
 import { useWorkflowDraftStoreV2 } from '@/platform/workflow/persistence/stores/workflowDraftStoreV2'
 import { useDomWidgetStore } from '@/stores/domWidgetStore'
 
-import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTelemetry } from '@/platform/telemetry'
 
@@ -32,12 +32,7 @@ import { app } from '@/scripts/app'
 import { ChangeTracker } from '@/scripts/changeTracker'
 import { useAppMode } from '@/composables/useAppMode'
 import type { ComfyWorkflowJSON } from '@/platform/workflow/validation/schemas/workflowSchema'
-import {
-  createTestSubgraph,
-  createTestSubgraphData
-} from '@/lib/litegraph/src/subgraph/__fixtures__/subgraphHelpers'
-import { LiteGraph, SubgraphNode } from '@/lib/litegraph/src/litegraph'
-import { useSubgraphService } from '@/services/subgraphService'
+import { createTestSubgraph } from '@/lib/litegraph/src/subgraph/__fixtures__/subgraphHelpers'
 import { createMockChangeTracker } from '@/utils/__tests__/litegraphTestUtils'
 import type { AppMode } from '@/utils/appMode'
 import { isValidUuid } from '@/utils/formatUtil'
@@ -516,27 +511,6 @@ describe('useWorkflowService', () => {
       expect(app.activateRootGraph).toHaveBeenCalledWith(next.graph)
       expect(next.changeTracker.restore).toHaveBeenCalled()
       expect(useWorkflowStore().activeWorkflow?.path).toBe(next.path)
-    })
-
-    it('creates subgraph nodes from the returning workflow when tabs share a definition ID', async () => {
-      const previousGraph = app.createRootGraph()
-      previous.adoptGraph(previousGraph)
-      assert.exists(next.graph)
-      const definition = createTestSubgraphData()
-      const previousSubgraph = previousGraph.createSubgraph(definition)
-      const nextSubgraph = next.graph.createSubgraph(definition)
-      const subgraphs = useSubgraphService()
-      subgraphs.registerNewSubgraph(previousSubgraph, definition)
-      subgraphs.registerNewSubgraph(nextSubgraph, definition)
-
-      const service = useWorkflowService()
-      await service.openWorkflow(next)
-      await service.openWorkflow(previous)
-      const node = LiteGraph.createNode(definition.id)
-
-      assert.instanceOf(node, SubgraphNode)
-      expect(node.subgraph).toBe(previousSubgraph)
-      expect(node.subgraph).not.toBe(nextSubgraph)
     })
 
     it('tells extensions the visible graph changed without reconfiguring', async () => {

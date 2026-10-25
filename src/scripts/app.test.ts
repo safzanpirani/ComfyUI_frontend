@@ -1483,6 +1483,30 @@ describe('ComfyApp', () => {
       ).toEqual(['beforeLoadGraph', 'afterConfigureGraph', 'afterLoadGraph'])
     })
 
+    it('creates subgraph nodes from the returning root when graphs share a definition ID', () => {
+      const first = new LGraph()
+      const definition = createTestSubgraph().asSerialisable()
+      const firstSubgraph = first.createSubgraph(definition)
+      const second = new LGraph()
+      const secondSubgraph = second.createSubgraph(definition)
+      for (const [index, graph] of [first, second].entries()) {
+        const owner = new ComfyWorkflow({
+          path: `workflows/subgraph-${index}.json`,
+          modified: 0,
+          size: 0
+        })
+        owner.adoptGraph(graph)
+        useWorkflowStore().attachWorkflow(owner)
+      }
+      app.activateRootGraph(first)
+      app.activateRootGraph(second)
+      app.activateRootGraph(first)
+      const node = LiteGraph.createNode(definition.id)
+      assert(node && 'subgraph' in node)
+      expect(node.subgraph).toBe(firstSubgraph)
+      expect(node.subgraph).not.toBe(secondSubgraph)
+    })
+
     it('registers only the DOM widgets of the root graph on screen across a tab round trip', () => {
       function ownedGraphWithDomWidget(path: string) {
         const graph = new LGraph()

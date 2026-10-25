@@ -877,9 +877,14 @@ export class ComfyApp implements IComfyApp {
     return graph
   }
 
-  /** Make `graph` the root graph shown on the canvas. */
   activateRootGraph(graph: LGraph): void {
     const previous = this.rootGraphInternal
+    for (const subgraph of graph.subgraphs.values()) {
+      useSubgraphService().registerNewSubgraph(
+        subgraph,
+        subgraph.asSerialisable()
+      )
+    }
     if (previous === graph) {
       this.canvas.setGraph(graph)
       return

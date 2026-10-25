@@ -32,7 +32,6 @@ import { useApp } from '@/scripts/appInstance'
 import { blankGraph, defaultGraph } from '@/scripts/defaultGraph'
 import { useDialogService } from '@/services/dialogService'
 import { useExtensionService } from '@/services/extensionService'
-import { useSubgraphService } from '@/services/subgraphService'
 import { useAppMode } from '@/composables/useAppMode'
 import { useAppModeStore } from '@/stores/appModeStore'
 import { useExecutionErrorStore } from '@/stores/executionErrorStore'
@@ -411,12 +410,6 @@ export const useWorkflowService = () => {
       const app = useApp()
       useSubgraphNavigationStore().suppressRootGraphHash(graph)
       app.activateRootGraph(graph)
-      for (const subgraph of graph.subgraphs.values()) {
-        useSubgraphService().registerNewSubgraph(
-          subgraph,
-          subgraph.asSerialisable()
-        )
-      }
       useMissingModelStore().createVerificationAbortController().abort()
       useMissingMediaStore().createVerificationAbortController().abort()
       useMissingModelStore().setMissingModels([])
