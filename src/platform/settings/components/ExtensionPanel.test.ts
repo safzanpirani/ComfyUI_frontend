@@ -217,7 +217,7 @@ describe('ExtensionPanel', () => {
     const user = userEvent.setup()
     loadExtensionPaths(
       ['/extensions/agent-cushions/'],
-      ['/extensions/agent-cushions/']
+      ['/extensions/agent-cushions/', '/extensions/missing/']
     )
     vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
@@ -226,6 +226,9 @@ describe('ExtensionPanel', () => {
       screen.getByRole('switch', { name: 'Extension folder agent-cushions' })
     )
 
+    expect(useSettingStore().get('Comfy.Extension.DisabledPacks')).toEqual([
+      '/extensions/missing/'
+    ])
     expect(pendingChangeFor('agent-cushions')).toContain('[+]')
   })
 
