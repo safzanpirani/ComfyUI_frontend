@@ -32,6 +32,7 @@ import { useApp } from '@/scripts/appInstance'
 import { blankGraph, defaultGraph } from '@/scripts/defaultGraph'
 import { useDialogService } from '@/services/dialogService'
 import { useExtensionService } from '@/services/extensionService'
+import { nodeTypesMayStillArrive } from '@/platform/lateCustomNodes/lateNodeTypes'
 import { useAppMode } from '@/composables/useAppMode'
 import { useAppModeStore } from '@/stores/appModeStore'
 import { useExecutionErrorStore } from '@/stores/executionErrorStore'
@@ -989,8 +990,8 @@ export const useWorkflowService = () => {
     const { missingNodeTypes, missingModelCandidates, missingMediaCandidates } =
       wf.pendingWarnings ?? {}
 
-    // Always sync missing nodes store (clear when empty).
     if (
+      !nodeTypesMayStillArrive() &&
       missingNodesErrorStore.surfaceMissingNodes(missingNodeTypes ?? []) &&
       !options?.silent
     ) {
