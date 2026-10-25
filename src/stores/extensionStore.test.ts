@@ -75,7 +75,7 @@ describe('extensionStore', () => {
         .mockResolvedValueOnce(new Response())
 
       expect(await store.setExtensionPathEnabled('/extensions/a/', true)).toBe(
-        false
+        'refused'
       )
       expect(settingStore.get('Comfy.Extension.DisabledPacks')).toEqual([
         '/extensions/a/',
@@ -83,11 +83,16 @@ describe('extensionStore', () => {
       ])
 
       expect(await store.setExtensionPathEnabled('/extensions/a/', true)).toBe(
-        true
+        'saved'
       )
       expect(settingStore.get('Comfy.Extension.DisabledPacks')).toEqual([
         '/extensions/missing/'
       ])
+      expect(api.storeSetting).toHaveBeenNthCalledWith(
+        2,
+        'Comfy.Extension.DisabledPacks',
+        ['/extensions/missing/']
+      )
     })
   })
 

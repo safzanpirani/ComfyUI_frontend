@@ -215,7 +215,13 @@ async function setExtensionEnabled(name: string, enabled: boolean) {
 }
 
 async function handleExtensionPathEnabled(path: string, enabled: boolean) {
-  if ((await extensionStore.setExtensionPathEnabled(path, enabled)) === false) {
+  const result = await extensionStore.setExtensionPathEnabled(path, enabled)
+  if (result === 'refused') {
+    toast.warning(t('g.warning'), {
+      description: t('g.extensionPathSaveRefused'),
+      duration: 5000
+    })
+  } else if (result === 'unconfirmed') {
     toast.warning(t('g.warning'), {
       description: t('g.extensionPathSaveUnconfirmed'),
       duration: 5000

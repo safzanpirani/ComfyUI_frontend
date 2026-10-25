@@ -3,7 +3,6 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { reportError } from '@/platform/telemetry/reportError'
-import { api } from '@/scripts/api'
 import type { ComfyExtension } from '@/types/comfy'
 
 /**
@@ -184,7 +183,7 @@ export const useExtensionStore = defineStore('extension', () => {
   async function setExtensionPathEnabled(
     path: string,
     enabled: boolean
-  ): Promise<boolean | undefined> {
+  ): Promise<'saved' | 'unchanged' | 'refused' | 'unconfirmed' | undefined> {
     if (isSavingExtensionPaths.value) return
 
     const previousDisabledPaths = getCurrentDisabledExtensionPaths()
@@ -194,35 +193,28 @@ export const useExtensionStore = defineStore('extension', () => {
     isSavingExtensionPaths.value = true
 
     try {
-      const settingStore = useSettingStore()
-      settingStore.settingValues['Comfy.Extension.DisabledPacks'] =
-        nextDisabledPaths
-      const response = await api.storeSetting(
+      const result = await useSettingStore().setWithOutcome(
         'Comfy.Extension.DisabledPacks',
         nextDisabledPaths
       )
-      if (!response.ok) {
-        settingStore.settingValues['Comfy.Extension.DisabledPacks'] =
-          previousDisabledPaths
-        const reason = response.statusText || 'Request failed'
+      if (result.status === 'refused') {
+        const reason = result.statusText || 'Request failed'
         reportError(
           new Error(
-            `Failed to store disabled extension paths: ${response.status} ${reason}`
+            `Failed to store disabled extension paths: ${result.statusCode} ${reason}`
           ),
           {
             errorType: 'failure_saving_extension_path_setting',
             surface: 'platform'
           }
         )
-        return false
+      } else if (result.status === 'unconfirmed') {
+        reportError(result.cause, {
+          errorType: 'failure_saving_extension_path_setting',
+          surface: 'platform'
+        })
       }
-      return true
-    } catch (cause) {
-      reportError(cause, {
-        errorType: 'failure_saving_extension_path_setting',
-        surface: 'platform'
-      })
-      return false
+      return result.status
     } finally {
       isSavingExtensionPaths.value = false
     }

@@ -78,6 +78,7 @@
     "extensionPath": "Extension Folder",
     "extensionPaths": "Extensions by Folder",
     "extensionPathToggle": "Extension folder {name}",
+    "extensionPathSaveRefused": "The extension change was not saved. Please try again.",
     "extensionPathSaveUnconfirmed": "The extension change could not be confirmed. Reload the page before trying again.",
     "reloadToApplyChanges": "Reload to apply changes",
     "insert": "Insert",
