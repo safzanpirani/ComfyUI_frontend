@@ -726,45 +726,50 @@ describe('ComfyApp', () => {
       expect(app.rootGraph).toBe(active)
     })
 
-    it('keeps visible subgraph constructors after a background configure fails', async () => {
-      const active = new LGraph()
-      const previous = singletonApp.rootGraphOrUndefined
-      onTestFinished(() => {
-        Reflect.set(singletonApp, 'rootGraphInternal', previous)
-      })
-      Reflect.set(singletonApp, 'rootGraphInternal', active)
-      Reflect.set(app, 'rootGraphInternal', active)
-      const definition = createTestSubgraph({
-        id: crypto.randomUUID()
-      }).asSerialisable()
-      const visibleSubgraph = active.createSubgraph(definition)
-      useSubgraphService().registerNewSubgraph(visibleSubgraph, definition)
-      const workflow = new ComfyWorkflow({
-        path: 'workflows/background.json',
-        modified: 0,
-        size: 0
-      })
-      const owned = new LGraph()
-      workflow.adoptGraph(owned)
-      vi.spyOn(owned, 'configure').mockImplementationOnce(() => {
-        throw new Error('configure failed')
-      })
+    it.for(['success', 'configure-error'] as const)(
+      'keeps visible subgraph constructors after a background load: %s',
+      async (outcome) => {
+        const active = new LGraph()
+        const previous = singletonApp.rootGraphOrUndefined
+        onTestFinished(() => {
+          Reflect.set(singletonApp, 'rootGraphInternal', previous)
+        })
+        Reflect.set(singletonApp, 'rootGraphInternal', active)
+        Reflect.set(app, 'rootGraphInternal', active)
+        const definition = createTestSubgraph({
+          id: crypto.randomUUID()
+        }).asSerialisable()
+        const visibleSubgraph = active.createSubgraph(definition)
+        useSubgraphService().registerNewSubgraph(visibleSubgraph, definition)
+        const workflow = new ComfyWorkflow({
+          path: 'workflows/background.json',
+          modified: 0,
+          size: 0
+        })
+        const owned = new LGraph()
+        workflow.adoptGraph(owned)
+        if (outcome === 'configure-error') {
+          vi.spyOn(owned, 'configure').mockImplementationOnce(() => {
+            throw new Error('configure failed')
+          })
+        }
 
-      const result = await app.loadGraphData(
-        zComfyWorkflow.parse({
-          ...createWorkflowGraphData(),
-          definitions: { subgraphs: [definition] }
-        }),
-        false,
-        false,
-        workflow
-      )
+        const result = await app.loadGraphData(
+          zComfyWorkflow.parse({
+            ...createWorkflowGraphData(),
+            definitions: { subgraphs: [definition] }
+          }),
+          false,
+          false,
+          workflow
+        )
 
-      expect(result).toBe(false)
-      const node = LiteGraph.createNode(definition.id)
-      assert(node && 'subgraph' in node)
-      expect(node.subgraph).toBe(visibleSubgraph)
-    })
+        expect(result).toBe(outcome === 'success')
+        const node = LiteGraph.createNode(definition.id)
+        assert(node && 'subgraph' in node)
+        expect(node.subgraph).toBe(visibleSubgraph)
+      }
+    )
 
     it('refuses a non-clean load into a workflow whose graph was released instead of borrowing the active one', async () => {
       app.canvasElRef.value = document.createElement('canvas')
@@ -1253,18 +1258,10 @@ describe('ComfyApp', () => {
         vi.mocked(workflowStore.openWorkflow).mockRestore()
         vi.mocked(workflowStore.isActive).mockRestore()
 
-        const undoneSubgraph = createTestSubgraph({
-          rootGraph: undoneGraph,
-          id: crypto.randomUUID()
-        })
-        const definition = undoneSubgraph.asSerialisable()
         const saved = zComfyWorkflow.parse({
           ...createWorkflowGraphData(),
-          extra: { marker: 'saved' },
-          definitions: { subgraphs: [definition] }
+          extra: { marker: 'saved' }
         })
-        const switchedSubgraph = switchedGraph.createSubgraph(definition)
-        useSubgraphService().registerNewSubgraph(switchedSubgraph, definition)
         const changed = structuredClone(saved)
         changed.extra = { marker: 'changed' }
         const undone = markLoaded(
@@ -1334,9 +1331,6 @@ describe('ComfyApp', () => {
         expect(useExecutionErrorStore().captureRunErrorKey()).toBe(
           `${switched.path}:${switchedGraph.id}`
         )
-        const subgraphNode = LiteGraph.createNode(definition.id)
-        assert(subgraphNode && 'subgraph' in subgraphNode)
-        expect(subgraphNode.subgraph).toBe(switchedSubgraph)
         expect(undoneGraph.extra).toMatchObject({ marker: 'saved' })
         expect(undoneTracker.activeState.extra).toMatchObject({
           marker: 'saved'
