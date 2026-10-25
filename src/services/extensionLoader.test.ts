@@ -303,6 +303,11 @@ describe('extension loading', () => {
       const customExtensionLoaded = vi.fn()
       vi.stubGlobal('customExtensionLoaded', customExtensionLoaded)
       window.history.replaceState(null, '', '/?safe')
+      useSettingStore().$patch({
+        settingValues: {
+          'Comfy.Extension.DisabledPacks': ['/extensions/pack-a/']
+        }
+      })
       vi.spyOn(api, 'getExtensions').mockResolvedValue([
         '/extensions/pack-a/main.js'
       ])
@@ -314,6 +319,9 @@ describe('extension loading', () => {
 
       expect(customExtensionLoaded).not.toHaveBeenCalled()
       expect(useExtensionStore().isCoreExtension('core.test')).toBe(true)
+      expect(useExtensionStore().extensionPaths).toEqual([
+        '/extensions/pack-a/'
+      ])
     })
 
     it('falls back safely when the persisted disabled-pack setting is malformed', async () => {
