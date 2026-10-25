@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { useSettingStore } from '@/platform/settings/settingStore'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 describe('extensionStore', () => {
@@ -48,21 +49,26 @@ describe('extensionStore', () => {
     })
   })
 
-  describe('extension packs', () => {
-    it('deduplicates discovered packs and retains disabled packs that are absent', () => {
+  describe('extension paths', () => {
+    it('deduplicates discovered paths and retains disabled paths that are absent', () => {
       const store = useExtensionStore()
-      store.loadExtensionPackPaths(
+      useSettingStore().$patch({
+        settingValues: {
+          'Comfy.Extension.DisabledPacks': [
+            '/extensions/b/',
+            '/extensions/missing/'
+          ]
+        }
+      })
+      store.loadExtensionPaths(
         ['/extensions/a/', '/extensions/a/', '/extensions/b/'],
         ['/extensions/b/', '/extensions/missing/']
       )
 
-      expect(store.extensionPackPaths).toEqual([
-        '/extensions/a/',
-        '/extensions/b/'
-      ])
-      expect(store.isExtensionPackEnabled('/extensions/a/')).toBe(true)
-      expect(store.isExtensionPackEnabled('/extensions/b/')).toBe(false)
-      expect(store.getCurrentDisabledExtensionPackPaths()).toEqual([
+      expect(store.extensionPaths).toEqual(['/extensions/a/', '/extensions/b/'])
+      expect(store.isExtensionPathEnabledAtBoot('/extensions/a/')).toBe(true)
+      expect(store.isExtensionPathEnabledAtBoot('/extensions/b/')).toBe(false)
+      expect(store.getCurrentDisabledExtensionPaths()).toEqual([
         '/extensions/b/',
         '/extensions/missing/'
       ])

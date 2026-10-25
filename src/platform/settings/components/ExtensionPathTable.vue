@@ -1,25 +1,27 @@
 <template>
-  <div v-if="packs.length" class="flex flex-col gap-2">
-    <h3 class="font-semibold">{{ $t('g.extensionPacks') }}</h3>
+  <div v-if="paths.length" class="flex flex-col gap-2">
+    <h3 class="font-semibold">{{ $t('g.extensionPaths') }}</h3>
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>{{ $t('g.extensionPack') }}</TableHead>
+          <TableHead>{{ $t('g.extensionPath') }}</TableHead>
           <TableHead class="w-20" />
         </TableRow>
       </TableHeader>
       <TableBody>
-        <TableRow v-for="pack in packs" :key="pack">
-          <TableCell>{{ extensionPackName(pack) }}</TableCell>
+        <TableRow v-for="path in paths" :key="path">
+          <TableCell>{{ extensionNameFromPath(path) }}</TableCell>
           <TableCell class="text-right">
             <Switch
-              :model-value="enabledByPath[pack]"
+              :model-value="enabledByPath[path]"
               :disabled="disabled"
               :aria-label="
-                $t('g.extensionPackToggle', { name: extensionPackName(pack) })
+                $t('g.extensionPathToggle', {
+                  name: extensionNameFromPath(path)
+                })
               "
               @update:model-value="
-                (enabled) => emit('setEnabled', pack, enabled)
+                (enabled) => emit('setEnabled', path, enabled)
               "
             />
           </TableCell>
@@ -37,14 +39,14 @@ import TableCell from '@/components/ui/table/TableCell.vue'
 import TableHead from '@/components/ui/table/TableHead.vue'
 import TableHeader from '@/components/ui/table/TableHeader.vue'
 import TableRow from '@/components/ui/table/TableRow.vue'
-import { extensionPackName } from '@/platform/settings/utils/extensionPack'
+import { extensionNameFromPath } from '@/platform/settings/utils/extensionPath'
 
 const {
-  packs,
+  paths,
   enabledByPath,
   disabled = false
 } = defineProps<{
-  packs: string[]
+  paths: string[]
   enabledByPath: Record<string, boolean>
   disabled?: boolean
 }>()

@@ -9,7 +9,7 @@ import { CANVAS_NAVIGATION_PRESETS } from '@/platform/settings/constants/canvasN
 import { AGENT_CONSENT_OFFER_DECLINED_SETTING_ID } from '@/platform/settings/constants/agent'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import type { SettingParams } from '@/platform/settings/types'
-import { normalizeDisabledExtensionPackPaths } from '@/platform/settings/utils/extensionPack'
+import { normalizeDisabledExtensionPaths } from '@/platform/settings/utils/extensionPath'
 import type { Keybinding } from '@/platform/keybindings/types'
 import { NodeBadgeMode } from '@/types/nodeSource'
 import { LinkReleaseTriggerAction } from '@/types/searchBoxTypes'
@@ -692,10 +692,10 @@ export const CORE_SETTINGS: SettingParams[] = [
   },
   {
     id: 'Comfy.Extension.DisabledPacks',
-    name: 'Disabled extension packs',
+    name: 'Disabled extension paths',
     type: 'hidden',
-    defaultValue: [] as string[],
-    migrateDeprecatedValue: normalizeDisabledExtensionPackPaths,
+    defaultValue: [],
+    migrateDeprecatedValue: normalizeDisabledExtensionPaths,
     versionAdded: '1.59.0'
   },
   {

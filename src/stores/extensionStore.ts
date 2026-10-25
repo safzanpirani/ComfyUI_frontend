@@ -4,7 +4,6 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { reportError } from '@/platform/telemetry/reportError'
 import type { ComfyExtension } from '@/types/comfy'
-import { getErrorMessage } from '@/utils/errorUtil'
 
 /**
  * These extensions are always active, even if they are disabled in the setting.
@@ -31,6 +30,11 @@ type Registration =
   | { mode: 'holding'; held: readonly ComfyExtension[] }
   | { mode: 'starting' }
 
+interface ExtensionPathState {
+  paths: string[]
+  disabledAtBoot: Set<string>
+}
+
 export const useExtensionStore = defineStore('extension', () => {
   // For legacy reasons, the name uniquely identifies an extension
   const extensionByName = ref<Record<string, ComfyExtension>>({})
@@ -38,9 +42,12 @@ export const useExtensionStore = defineStore('extension', () => {
   // Not using computed because disable extension requires reloading of the page.
   // Dynamically update this list won't affect extensions that are already loaded.
   const disabledExtensionNames = ref<Set<string>>(new Set())
-  const extensionPackPaths = ref<string[]>([])
-  const disabledExtensionPackPaths = ref<Set<string>>(new Set())
-  const isSavingExtensionPacks = ref(false)
+  const extensionPathState = shallowRef<ExtensionPathState>({
+    paths: [],
+    disabledAtBoot: new Set()
+  })
+  const extensionPaths = computed(() => extensionPathState.value.paths)
+  const isSavingExtensionPaths = ref(false)
 
   // Disabled extension names that are currently not in the extension list.
   // If a node pack is disabled in the backend, we shouldn't remove the configuration
@@ -158,73 +165,47 @@ export const useExtensionStore = defineStore('extension', () => {
     }
   }
 
-  function loadExtensionPackPaths(paths: string[], disabledPaths: string[]) {
-    extensionPackPaths.value = [...new Set(paths)]
-    disabledExtensionPackPaths.value = new Set(disabledPaths)
-  }
-
-  const isExtensionPackEnabled = (path: string) =>
-    !disabledExtensionPackPaths.value.has(path)
-
-  function getCurrentDisabledExtensionPackPaths(): string[] {
-    const storedPaths = useSettingStore().get('Comfy.Extension.DisabledPacks')
-    return Array.isArray(storedPaths)
-      ? storedPaths
-      : Array.from(disabledExtensionPackPaths.value)
-  }
-
-  async function writeDisabledExtensionPackPaths(
-    paths: string[]
-  ): Promise<unknown | undefined> {
-    try {
-      const result = await useSettingStore().setWithResult(
-        'Comfy.Extension.DisabledPacks',
-        paths
-      )
-      return result?.ok === false ? result.error : undefined
-    } catch (error) {
-      return error
+  function loadExtensionPaths(paths: string[], disabledAtBoot: string[]) {
+    extensionPathState.value = {
+      paths: [...new Set(paths)],
+      disabledAtBoot: new Set(disabledAtBoot)
     }
   }
 
-  function reportExtensionPackWriteFailure(
-    cause: unknown,
-    rollbackCause: unknown
-  ) {
-    reportError(cause, {
-      errorType: 'failure_writing_extension_pack_setting',
-      surface: 'platform',
-      tags: { rollback_failed: rollbackCause !== undefined },
-      context:
-        rollbackCause === undefined
-          ? undefined
-          : { rollback_error: getErrorMessage(rollbackCause) }
-    })
+  function isExtensionPathEnabledAtBoot(path: string) {
+    return !extensionPathState.value.disabledAtBoot.has(path)
   }
 
-  async function setExtensionPackEnabled(
+  function getCurrentDisabledExtensionPaths(): string[] {
+    return useSettingStore().get('Comfy.Extension.DisabledPacks')
+  }
+
+  async function setExtensionPathEnabled(
     path: string,
     enabled: boolean
   ): Promise<boolean | undefined> {
-    if (isSavingExtensionPacks.value) return
+    if (isSavingExtensionPaths.value) return
 
-    const previousDisabledPaths = getCurrentDisabledExtensionPackPaths()
+    const previousDisabledPaths = getCurrentDisabledExtensionPaths()
     const nextDisabledPaths = enabled
       ? previousDisabledPaths.filter((disabledPath) => disabledPath !== path)
       : [...new Set([...previousDisabledPaths, path])]
-    isSavingExtensionPacks.value = true
+    isSavingExtensionPaths.value = true
 
     try {
-      const cause = await writeDisabledExtensionPackPaths(nextDisabledPaths)
-      if (cause === undefined) return true
-
-      const rollbackCause = await writeDisabledExtensionPackPaths(
-        previousDisabledPaths
+      await useSettingStore().set(
+        'Comfy.Extension.DisabledPacks',
+        nextDisabledPaths
       )
-      reportExtensionPackWriteFailure(cause, rollbackCause)
+      return true
+    } catch (cause) {
+      reportError(cause, {
+        errorType: 'failure_saving_extension_path_setting',
+        surface: 'platform'
+      })
       return false
     } finally {
-      isSavingExtensionPacks.value = false
+      isSavingExtensionPaths.value = false
     }
   }
 
@@ -248,8 +229,8 @@ export const useExtensionStore = defineStore('extension', () => {
   return {
     extensions,
     enabledExtensions,
-    extensionPackPaths,
-    isSavingExtensionPacks,
+    extensionPaths,
+    isSavingExtensionPaths,
     inactiveDisabledExtensionNames,
     isExtensionInstalled,
     isExtensionEnabled,
@@ -267,10 +248,10 @@ export const useExtensionStore = defineStore('extension', () => {
     areNodeDefHooksOwed,
     takeOwedNodeDefHooks,
     loadDisabledExtensionNames,
-    loadExtensionPackPaths,
-    isExtensionPackEnabled,
-    getCurrentDisabledExtensionPackPaths,
-    setExtensionPackEnabled,
+    loadExtensionPaths,
+    isExtensionPathEnabledAtBoot,
+    getCurrentDisabledExtensionPaths,
+    setExtensionPathEnabled,
     captureCoreExtensions,
     isCoreExtension,
     hasThirdPartyExtensions

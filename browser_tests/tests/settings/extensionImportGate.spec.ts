@@ -27,8 +27,8 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-test.describe('Extension pack import gate', { tag: ['@ui', '@canvas'] }, () => {
-  test("does not apply a disabled pack's top-level visual side effects", async ({
+test.describe('Extension import gate', { tag: ['@ui', '@canvas'] }, () => {
+  test("does not apply a disabled extension's top-level visual side effects", async ({
     comfyPage,
     page
   }) => {

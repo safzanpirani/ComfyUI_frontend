@@ -4,7 +4,6 @@ import {
   loadCustomExtensionsWithDeadline
 } from '@/platform/lateCustomNodes/lateLoading'
 import { useSettingStore } from '@/platform/settings/settingStore'
-import { normalizeDisabledExtensionPackPaths } from '@/platform/settings/utils/extensionPack'
 import {
   EXTENSION_FAILURES_TRUNCATED_FIELD,
   EXTENSION_LOAD_ERROR_TYPE
@@ -22,7 +21,7 @@ const INLINED_CLOUD_EXTENSIONS = new Set([
   '/extensions/cloud/sentry.js'
 ])
 
-function getExtensionPackPath(extension: string): string | undefined {
+function getExtensionPath(extension: string): string | undefined {
   try {
     const pathname = new URL(extension, window.location.href).pathname
     return pathname.match(/^\/extensions\/[^/]+\//)?.[0]
@@ -40,11 +39,11 @@ export function shouldLoadExtension(
   extension: string,
   {
     isCloudBuild,
-    disabledPackPaths = [],
+    disabledExtensionPaths = [],
     disableAllCustomExtensions = false
   }: {
     isCloudBuild: boolean
-    disabledPackPaths?: readonly string[]
+    disabledExtensionPaths?: readonly string[]
     disableAllCustomExtensions?: boolean
   }
 ): boolean {
@@ -52,8 +51,11 @@ export function shouldLoadExtension(
   if (isCloudBuild && INLINED_CLOUD_EXTENSIONS.has(extension)) return false
   if (disableAllCustomExtensions) return false
 
-  const packPath = getExtensionPackPath(extension)
-  return packPath === undefined || !disabledPackPaths.includes(packPath)
+  const extensionPath = getExtensionPath(extension)
+  return (
+    extensionPath === undefined ||
+    !disabledExtensionPaths.includes(extensionPath)
+  )
 }
 
 const MAX_EXTENSION_PATH_LENGTH = 512
@@ -150,13 +152,13 @@ export async function loadExtensions(
   extensionStore.loadDisabledExtensionNames(
     settingStore.get('Comfy.Extension.Disabled')
   )
-  const disabledPackPaths = normalizeDisabledExtensionPackPaths(
-    settingStore.get('Comfy.Extension.DisabledPacks')
+  const disabledExtensionPaths = settingStore.get(
+    'Comfy.Extension.DisabledPacks'
   )
   const disableAllCustomExtensions = isSafeExtensionBoot(window.location.search)
 
   const extensions = await api.getExtensions()
-  extensionStore.loadExtensionPackPaths(
+  extensionStore.loadExtensionPaths(
     extensions
       .filter((extension) =>
         shouldLoadExtension(extension, {
@@ -164,10 +166,10 @@ export async function loadExtensions(
         })
       )
       .flatMap((extension) => {
-        const packPath = getExtensionPackPath(extension)
-        return packPath === undefined ? [] : [packPath]
+        const extensionPath = getExtensionPath(extension)
+        return extensionPath === undefined ? [] : [extensionPath]
       }),
-    disabledPackPaths
+    disabledExtensionPaths
   )
 
   installErrorNodeWidgets()
@@ -180,7 +182,7 @@ export async function loadExtensions(
   const customExtensions = extensions.filter((extension) =>
     shouldLoadExtension(extension, {
       isCloudBuild: __DISTRIBUTION__ === 'cloud',
-      disabledPackPaths,
+      disabledExtensionPaths,
       disableAllCustomExtensions
     })
   )

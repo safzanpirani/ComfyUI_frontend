@@ -1,10 +1,12 @@
-import { afterEach, assert, describe, expect, it, vi } from 'vitest'
+import { assert, describe, expect, it, vi } from 'vitest'
 
 import { LGraphCanvas, LGraphNode } from '@/lib/litegraph/src/litegraph'
+import { CORE_SETTINGS } from '@/platform/settings/constants/coreSettings'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { EXTENSION_FAILURES_TRUNCATED_FIELD } from '@/platform/telemetry/extensionLoadTelemetry'
 import { reportError } from '@/platform/telemetry/reportError'
 import { api } from '@/scripts/api'
+import { useExtensionStore } from '@/stores/extensionStore'
 
 import type { ExtensionLoadFailure } from './extensionLoader'
 import {
@@ -16,12 +18,6 @@ import {
 
 vi.mock(import('@/platform/telemetry/reportError'))
 
-afterEach(() => {
-  useSettingStore().$patch({
-    settingValues: { 'Comfy.Extension.DisabledPacks': [] }
-  })
-})
-
 const coreLoad = vi.hoisted(() => ({
   onConfigure: undefined as unknown,
   processMouseDown: undefined as unknown,
@@ -32,9 +28,11 @@ vi.mock(import('@/extensions/core/index'), () => ({
   registerCoreExtensions: async () => {
     const { LGraphCanvas, LGraphNode } =
       await import('@/lib/litegraph/src/litegraph')
+    const { useExtensionStore } = await import('@/stores/extensionStore')
     coreLoad.onConfigure = LGraphNode.prototype.onConfigure
     coreLoad.processMouseDown = LGraphCanvas.prototype.processMouseDown
     coreLoad.processMouseMove = LGraphCanvas.prototype.processMouseMove
+    useExtensionStore().registerExtension({ name: 'core.test' })
   }
 }))
 
@@ -77,7 +75,7 @@ describe('shouldLoadExtension', () => {
     expect(
       shouldLoadExtension('http://', {
         isCloudBuild: false,
-        disabledPackPaths: ['/extensions/agent-cushions/']
+        disabledExtensionPaths: ['/extensions/agent-cushions/']
       })
     ).toBe(true)
   })
@@ -95,7 +93,7 @@ describe('shouldLoadExtension', () => {
       expect(
         shouldLoadExtension(extension, {
           isCloudBuild: false,
-          disabledPackPaths: ['/extensions/agent-cushions/']
+          disabledExtensionPaths: ['/extensions/agent-cushions/']
         })
       ).toBe(expected)
     }
@@ -315,32 +313,33 @@ describe('extension loading', () => {
       await loadExtensions()
 
       expect(customExtensionLoaded).not.toHaveBeenCalled()
-      expect(coreLoad.onConfigure).toBe(LGraphNode.prototype.onConfigure)
+      expect(useExtensionStore().isCoreExtension('core.test')).toBe(true)
     })
 
     it('falls back safely when the persisted disabled-pack setting is malformed', async () => {
       window.history.replaceState(null, '', '/?safe')
       const settingStore = useSettingStore()
-      settingStore.$patch({
-        settingValues: {
-          'Comfy.Extension.DisabledPacks': {} as never
-        }
-      })
+      vi.mocked(fetch).mockResolvedValueOnce(
+        Response.json({ 'Comfy.Extension.DisabledPacks': {} })
+      )
+      await settingStore.load()
+      const disabledPathsSetting = CORE_SETTINGS.find(
+        ({ id }) => id === 'Comfy.Extension.DisabledPacks'
+      )
+      assert(disabledPathsSetting)
+      settingStore.addSetting(disabledPathsSetting)
       vi.spyOn(api, 'getExtensions').mockResolvedValue([
         '/extensions/pack-a/main.js'
       ])
 
       await loadExtensions()
 
-      expect(coreLoad.onConfigure).toBe(LGraphNode.prototype.onConfigure)
+      expect(useExtensionStore().isCoreExtension('core.test')).toBe(true)
       expect(reportError).toHaveBeenCalledOnce()
       expect(reportError).toHaveBeenCalledWith(expect.any(TypeError), {
-        errorType: 'invalid_extension_pack_setting',
+        errorType: 'invalid_extension_path_setting',
         surface: 'platform',
         level: 'warning'
-      })
-      settingStore.$patch({
-        settingValues: { 'Comfy.Extension.DisabledPacks': [] }
       })
     })
 

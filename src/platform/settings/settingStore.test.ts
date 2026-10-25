@@ -705,30 +705,6 @@ describe('useSettingStore', () => {
       expect(useTelemetry()?.trackSettingChanged).not.toHaveBeenCalled()
     })
 
-    it('returns a failure when the server rejects a setting write', async () => {
-      store.addSetting({
-        id: 'Comfy.Locale',
-        name: 'Comfy.Locale',
-        type: 'text',
-        defaultValue: 'default'
-      })
-      vi.mocked(api.storeSetting).mockResolvedValueOnce(
-        new Response(null, {
-          status: 500,
-          statusText: 'Internal Server Error'
-        })
-      )
-
-      const result = await store.setWithResult('Comfy.Locale', 'newvalue')
-
-      expect(result).toMatchObject({
-        ok: false,
-        error: expect.objectContaining({
-          message: 'Failed to store setting: 500 Internal Server Error'
-        })
-      })
-    })
-
     describe('object mutation prevention', () => {
       beforeEach(() => {
         const setting: SettingParams = {

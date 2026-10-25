@@ -1,6 +1,6 @@
 import { reportError } from '@/platform/telemetry/reportError'
 
-export function extensionPackName(path: string): string {
+export function extensionNameFromPath(path: string): string {
   const encodedName = path.split('/').filter(Boolean).at(-1) ?? path
   try {
     return decodeURIComponent(encodedName)
@@ -9,7 +9,7 @@ export function extensionPackName(path: string): string {
   }
 }
 
-export function normalizeDisabledExtensionPackPaths(value: unknown): string[] {
+export function normalizeDisabledExtensionPaths(value: unknown): string[] {
   if (value === undefined) return []
   if (
     Array.isArray(value) &&
@@ -19,9 +19,9 @@ export function normalizeDisabledExtensionPackPaths(value: unknown): string[] {
   }
 
   reportError(
-    new TypeError('Disabled extension packs must be an array of strings'),
+    new TypeError('Disabled extension paths must be an array of strings'),
     {
-      errorType: 'invalid_extension_pack_setting',
+      errorType: 'invalid_extension_path_setting',
       surface: 'platform',
       level: 'warning'
     }

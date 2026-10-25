@@ -22,6 +22,15 @@ function renderPanel() {
   return render(ExtensionPanel, { global: { plugins: [testI18n] } })
 }
 
+function loadExtensionPaths(paths: string[], disabledAtBoot: string[]) {
+  useSettingStore().$patch({
+    settingValues: {
+      'Comfy.Extension.DisabledPacks': disabledAtBoot
+    }
+  })
+  useExtensionStore().loadExtensionPaths(paths, disabledAtBoot)
+}
+
 function pendingChangeFor(subject: string) {
   const row = screen
     .getAllByRole('listitem')
@@ -181,23 +190,20 @@ describe('ExtensionPanel', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('disables a whole extension pack without dropping absent disabled packs', async () => {
+  it('disables a whole extension folder without dropping absent disabled paths', async () => {
     const user = userEvent.setup()
-    const extensionStore = useExtensionStore()
-    extensionStore.loadExtensionPackPaths(
+    loadExtensionPaths(
       ['/extensions/agent-cushions/'],
       ['/extensions/missing/']
     )
-    const apiWrite = vi
-      .spyOn(api, 'storeSetting')
-      .mockResolvedValue(new Response())
+    vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     renderPanel()
     await user.click(
-      screen.getByRole('switch', { name: 'Extension pack agent-cushions' })
+      screen.getByRole('switch', { name: 'Extension folder agent-cushions' })
     )
 
-    expect(apiWrite).toHaveBeenLastCalledWith('Comfy.Extension.DisabledPacks', [
+    expect(useSettingStore().get('Comfy.Extension.DisabledPacks')).toEqual([
       '/extensions/missing/',
       '/extensions/agent-cushions/'
     ])
@@ -207,166 +213,124 @@ describe('ExtensionPanel', () => {
     expect(pendingChangeFor('agent-cushions')).toContain('[-]')
   })
 
-  it('marks a pending pack enable with [+]', async () => {
+  it('marks a pending extension enable with [+]', async () => {
     const user = userEvent.setup()
-    const extensionStore = useExtensionStore()
-    const settingStore = useSettingStore()
-    extensionStore.loadExtensionPackPaths(
+    loadExtensionPaths(
       ['/extensions/agent-cushions/'],
       ['/extensions/agent-cushions/']
     )
-    settingStore.$patch({
-      settingValues: {
-        'Comfy.Extension.DisabledPacks': ['/extensions/agent-cushions/']
-      }
-    })
     vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     renderPanel()
     await user.click(
-      screen.getByRole('switch', { name: 'Extension pack agent-cushions' })
+      screen.getByRole('switch', { name: 'Extension folder agent-cushions' })
     )
 
     expect(pendingChangeFor('agent-cushions')).toContain('[+]')
   })
 
-  it('keeps pending pack state across panel remounts', async () => {
+  it('keeps pending extension state across panel remounts', async () => {
     const user = userEvent.setup()
-    const extensionStore = useExtensionStore()
-    extensionStore.loadExtensionPackPaths(['/extensions/agent-cushions/'], [])
+    loadExtensionPaths(['/extensions/agent-cushions/'], [])
     vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     const firstPanel = renderPanel()
     await user.click(
-      screen.getByRole('switch', { name: 'Extension pack agent-cushions' })
+      screen.getByRole('switch', { name: 'Extension folder agent-cushions' })
     )
     firstPanel.unmount()
     renderPanel()
 
     expect(
-      screen.getByRole('switch', { name: 'Extension pack agent-cushions' })
+      screen.getByRole('switch', { name: 'Extension folder agent-cushions' })
     ).not.toBeChecked()
     expect(pendingChangeFor('agent-cushions')).toContain('[-]')
   })
 
-  it('keeps pack controls unavailable until the setting persists', async () => {
+  it('keeps extension controls unavailable until the setting persists', async () => {
     const user = userEvent.setup()
     let resolveSetting = (_response: Response) => {}
     const pendingSetting = new Promise<Response>((resolve) => {
       resolveSetting = resolve
     })
-    useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
+    loadExtensionPaths(['/extensions/a/'], [])
     vi.spyOn(api, 'storeSetting').mockReturnValue(pendingSetting)
 
     renderPanel()
-    const packSwitch = screen.getByRole('switch', {
-      name: 'Extension pack a'
+    const extensionSwitch = screen.getByRole('switch', {
+      name: 'Extension folder a'
     })
-    await user.click(packSwitch)
+    await user.click(extensionSwitch)
 
-    expect(packSwitch).toBeDisabled()
+    expect(extensionSwitch).toBeDisabled()
     expect(
       screen.getByRole('button', { name: 'Reload to apply changes' })
     ).toBeDisabled()
 
     resolveSetting(new Response())
-    await vi.waitFor(() => expect(packSwitch).toBeEnabled())
+    await vi.waitFor(() => expect(extensionSwitch).toBeEnabled())
   })
 
-  it('keeps a pending pack save locked across panel replacement', async () => {
+  it('keeps an unconfirmed extension change visible across panel replacement', async () => {
     const user = userEvent.setup()
+    const failure = new Error('setting unavailable')
     let rejectSetting = (_error: Error) => {}
     const pendingSetting = new Promise<Response>((_resolve, reject) => {
       rejectSetting = reject
     })
-    const apiWrite = vi
-      .spyOn(api, 'storeSetting')
-      .mockReturnValueOnce(pendingSetting)
-      .mockResolvedValueOnce(new Response())
-    useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
+    vi.spyOn(api, 'storeSetting').mockReturnValue(pendingSetting)
+    loadExtensionPaths(['/extensions/a/'], [])
 
     const firstPanel = renderPanel()
-    await user.click(screen.getByRole('switch', { name: 'Extension pack a' }))
+    await user.click(screen.getByRole('switch', { name: 'Extension folder a' }))
     firstPanel.unmount()
     renderPanel()
 
     const replacementSwitch = screen.getByRole('switch', {
-      name: 'Extension pack a'
+      name: 'Extension folder a'
     })
     expect(replacementSwitch).toBeDisabled()
     expect(
       screen.getByRole('button', { name: 'Reload to apply changes' })
     ).toBeDisabled()
-    await user.click(replacementSwitch)
-    expect(apiWrite).toHaveBeenCalledTimes(1)
 
-    rejectSetting(new Error('setting unavailable'))
+    rejectSetting(failure)
     await vi.waitFor(() => expect(replacementSwitch).toBeEnabled())
-    expect(replacementSwitch).toBeChecked()
-    expect(useSettingStore().get('Comfy.Extension.DisabledPacks')).toEqual([])
-    expect(apiWrite).toHaveBeenCalledTimes(2)
-  })
-
-  it('restores the pack and notifies when persistence fails', async () => {
-    const user = userEvent.setup()
-    const settingStore = useSettingStore()
-    useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
-    const failure = new Error('setting unavailable')
-    const apiWrite = vi
-      .spyOn(api, 'storeSetting')
-      .mockRejectedValueOnce(failure)
-      .mockResolvedValueOnce(new Response())
-
-    renderPanel()
-    const packSwitch = screen.getByRole('switch', {
-      name: 'Extension pack a'
-    })
-    await user.click(packSwitch)
-
-    await vi.waitFor(() => expect(packSwitch).toBeChecked())
-    expect(apiWrite).toHaveBeenNthCalledWith(
-      1,
-      'Comfy.Extension.DisabledPacks',
-      ['/extensions/a/']
-    )
-    expect(apiWrite).toHaveBeenNthCalledWith(
-      2,
-      'Comfy.Extension.DisabledPacks',
-      []
-    )
-    expect(settingStore.get('Comfy.Extension.DisabledPacks')).toEqual([])
+    expect(replacementSwitch).not.toBeChecked()
+    expect(useSettingStore().get('Comfy.Extension.DisabledPacks')).toEqual([
+      '/extensions/a/'
+    ])
+    expect(pendingChangeFor('a')).toContain('[-]')
     expect(reportError).toHaveBeenCalledWith(failure, {
-      errorType: 'failure_writing_extension_pack_setting',
-      surface: 'platform',
-      tags: { rollback_failed: false },
-      context: undefined
+      errorType: 'failure_saving_extension_path_setting',
+      surface: 'platform'
     })
     expect(useToast().toasts).toContainEqual(
       expect.objectContaining({
-        kind: 'error',
-        title: 'Error',
+        kind: 'warning',
+        title: 'Warning',
         description:
-          'The extension pack change was not saved. Reload the page before trying again.'
+          'The extension change could not be confirmed. Reload the page before trying again.'
       })
     )
   })
 
-  it('decodes pack names for display and accessibility', async () => {
+  it('decodes extension names for display and accessibility', async () => {
     const user = userEvent.setup()
-    useExtensionStore().loadExtensionPackPaths(['/extensions/My%20Pack/'], [])
+    loadExtensionPaths(['/extensions/My%20Pack/'], [])
     vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     renderPanel()
     await user.click(
-      screen.getByRole('switch', { name: 'Extension pack My Pack' })
+      screen.getByRole('switch', { name: 'Extension folder My Pack' })
     )
 
     expect(pendingChangeFor('My Pack')).toContain('[-]')
   })
 
-  it('leaves safe mode before reloading pack changes', async () => {
+  it('leaves safe mode before reloading extension changes', async () => {
     const user = userEvent.setup()
-    useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
+    loadExtensionPaths(['/extensions/a/'], [])
     vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
     const reload = vi.spyOn(window.location, 'reload').mockReturnValue()
     const historyState = { back: '/workflows' }
@@ -377,7 +341,7 @@ describe('ExtensionPanel', () => {
     )
 
     renderPanel()
-    await user.click(screen.getByRole('switch', { name: 'Extension pack a' }))
+    await user.click(screen.getByRole('switch', { name: 'Extension folder a' }))
     await user.click(
       screen.getByRole('button', { name: 'Reload to apply changes' })
     )

@@ -50,7 +50,7 @@ describe('window-dependent setting defaults', () => {
   )
 })
 
-describe('extension pack setting', () => {
+describe('extension path setting', () => {
   it('replaces malformed persisted values with a reported safe default', () => {
     const setting = CORE_SETTINGS.find(
       ({ id }) => id === 'Comfy.Extension.DisabledPacks'
@@ -58,7 +58,7 @@ describe('extension pack setting', () => {
 
     expect(setting?.migrateDeprecatedValue?.({ invalid: true })).toEqual([])
     expect(reportError).toHaveBeenCalledWith(expect.any(TypeError), {
-      errorType: 'invalid_extension_pack_setting',
+      errorType: 'invalid_extension_path_setting',
       surface: 'platform',
       level: 'warning'
     })
