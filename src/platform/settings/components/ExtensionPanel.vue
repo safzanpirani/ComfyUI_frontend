@@ -16,7 +16,7 @@
         </li>
         <li v-for="pack in changedExtensionPacks" :key="pack">
           <span>
-            {{ editingEnabledExtensionPacks[pack] ? '[-]' : '[+]' }}
+            {{ extensionStore.isExtensionPackEnabled(pack) ? '[-]' : '[+]' }}
           </span>
           {{ extensionPackName(pack) }}
         </li>

@@ -17,6 +17,14 @@ function renderPanel() {
   return render(ExtensionPanel, { global: { plugins: [testI18n] } })
 }
 
+/** Text of the pending-changes row naming `subject`, marker included. */
+function pendingChangeFor(subject: string) {
+  const row = screen
+    .getAllByRole('listitem')
+    .find((item) => item.textContent.includes(subject))
+  return row?.textContent ?? ''
+}
+
 describe('ExtensionPanel', () => {
   it('preserves the selected filter when clicked again', async () => {
     const user = userEvent.setup()
@@ -186,5 +194,23 @@ describe('ExtensionPanel', () => {
     expect(
       screen.getByRole('button', { name: 'Reload to apply changes' })
     ).toBeVisible()
+    expect(pendingChangeFor('agent-cushions')).toContain('[-]')
+  })
+
+  it('marks a pending pack enable with [+]', async () => {
+    const user = userEvent.setup()
+    const extensionStore = useExtensionStore()
+    extensionStore.loadExtensionPackPaths(
+      ['/extensions/agent-cushions/'],
+      ['/extensions/agent-cushions/']
+    )
+    vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+
+    renderPanel()
+    await user.click(
+      screen.getByRole('switch', { name: 'Extension pack agent-cushions' })
+    )
+
+    expect(pendingChangeFor('agent-cushions')).toContain('[+]')
   })
 })
