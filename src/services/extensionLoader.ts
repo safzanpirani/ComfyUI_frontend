@@ -18,8 +18,17 @@ const INLINED_CLOUD_EXTENSIONS = new Set([
 ])
 
 function getExtensionPackPath(extension: string): string | undefined {
-  const pathname = new URL(extension, window.location.origin).pathname
-  return pathname.match(/^\/extensions\/[^/]+\//)?.[0]
+  try {
+    const pathname = new URL(extension, window.location.href).pathname
+    return pathname.match(/^\/extensions\/[^/]+\//)?.[0]
+  } catch {
+    return undefined
+  }
+}
+
+export function isSafeExtensionBoot(search: string): boolean {
+  const value = new URLSearchParams(search).get('safe')
+  return value === '' || value === '1' || value === 'true'
 }
 
 export function shouldLoadExtension(
@@ -123,11 +132,6 @@ export function reportExtensionLoadFailures(
   })
 }
 
-/**
- * Loads the core extensions, then every extension served by the backend, in
- * parallel. Core extensions load first because custom extensions may depend
- * on them.
- */
 export async function loadExtensions() {
   const extensionStore = useExtensionStore()
   const settingStore = useSettingStore()
@@ -135,9 +139,7 @@ export async function loadExtensions() {
     settingStore.get('Comfy.Extension.Disabled')
   )
   const disabledPackPaths = settingStore.get('Comfy.Extension.DisabledPacks')
-  const disableAllCustomExtensions = new URLSearchParams(
-    window.location.search
-  ).has('safe')
+  const disableAllCustomExtensions = isSafeExtensionBoot(window.location.search)
 
   const extensions = await api.getExtensions()
   extensionStore.loadExtensionPackPaths(

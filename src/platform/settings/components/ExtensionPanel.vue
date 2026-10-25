@@ -22,7 +22,11 @@
         </li>
       </ul>
       <div class="flex justify-end">
-        <Button variant="destructive" @click="applyChanges">
+        <Button
+          variant="destructive"
+          :disabled="isSavingExtensionPacks"
+          @click="applyChanges"
+        >
           {{ $t('g.reloadToApplyChanges') }}
         </Button>
       </div>
@@ -41,6 +45,7 @@
     <ExtensionPackTable
       :packs="extensionStore.extensionPackPaths"
       :enabled-by-path="editingEnabledExtensionPacks"
+      :disabled="isSavingExtensionPacks"
       @set-enabled="setExtensionPackEnabled"
     />
     <ExtensionListTable
@@ -59,7 +64,7 @@
 
 <script setup lang="ts">
 import type { CheckboxCheckedState } from 'reka-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import Button from '@/components/ui/button/Button.vue'
@@ -72,6 +77,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import ExtensionListTable from '@/platform/settings/components/ExtensionListTable.vue'
 import ExtensionPackTable from '@/platform/settings/components/ExtensionPackTable.vue'
 import { useSettingStore } from '@/platform/settings/settingStore'
+import { extensionPackName } from '@/platform/settings/utils/extensionPack'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 const { t } = useI18n()
@@ -94,6 +100,7 @@ const settingStore = useSettingStore()
 
 const editingEnabledExtensions = ref<Record<string, boolean>>({})
 const editingEnabledExtensionPacks = ref<Record<string, boolean>>({})
+const isSavingExtensionPacks = ref(false)
 
 const filteredExtensions = computed(() => {
   const extensions = extensionStore.extensions
@@ -154,15 +161,23 @@ onMounted(() => {
     editingEnabledExtensions.value[ext.name] =
       extensionStore.isExtensionEnabled(ext.name)
   })
-  extensionStore.extensionPackPaths.forEach((path) => {
-    editingEnabledExtensionPacks.value[path] =
-      extensionStore.isExtensionPackEnabled(path)
-  })
 })
 
-function extensionPackName(path: string) {
-  return path.split('/').filter(Boolean).at(-1) ?? path
-}
+watch(
+  () => extensionStore.extensionPackPaths,
+  (paths) => {
+    const disabledPaths = new Set(
+      settingStore.get('Comfy.Extension.DisabledPacks')
+    )
+    editingEnabledExtensionPacks.value = Object.fromEntries(
+      paths.map((path) => [
+        path,
+        editingEnabledExtensionPacks.value[path] ?? !disabledPaths.has(path)
+      ])
+    )
+  },
+  { immediate: true }
+)
 
 const changedExtensions = computed(() => {
   return extensionStore.extensions.filter(
@@ -205,17 +220,40 @@ async function setExtensionEnabled(name: string, enabled: boolean) {
 }
 
 async function setExtensionPackEnabled(path: string, enabled: boolean) {
+  if (isSavingExtensionPacks.value) return
+
+  const previousEnabled = editingEnabledExtensionPacks.value[path]
+  const previousDisabledPaths = disabledExtensionPackPaths()
   editingEnabledExtensionPacks.value[path] = enabled
-  const editingDisabledExtensionPackPaths = Object.entries(
+  isSavingExtensionPacks.value = true
+
+  try {
+    await settingStore.set(
+      'Comfy.Extension.DisabledPacks',
+      disabledExtensionPackPaths()
+    )
+  } catch (error) {
+    editingEnabledExtensionPacks.value[path] = previousEnabled
+    await settingStore.set(
+      'Comfy.Extension.DisabledPacks',
+      previousDisabledPaths
+    )
+    throw error
+  } finally {
+    isSavingExtensionPacks.value = false
+  }
+}
+
+function disabledExtensionPackPaths() {
+  const editingDisabledPaths = Object.entries(
     editingEnabledExtensionPacks.value
   )
     .filter(([_, isEnabled]) => !isEnabled)
     .map(([packPath]) => packPath)
-
-  await settingStore.set('Comfy.Extension.DisabledPacks', [
+  return [
     ...extensionStore.inactiveDisabledExtensionPackPaths,
-    ...editingDisabledExtensionPackPaths
-  ])
+    ...editingDisabledPaths
+  ]
 }
 
 const enableAllExtensions = async () => {
@@ -246,7 +284,9 @@ const disableThirdPartyExtensions = async () => {
 }
 
 const applyChanges = () => {
-  // Refresh the page to apply changes
+  const url = new URL(window.location.href)
+  url.searchParams.delete('safe')
+  window.history.replaceState(null, '', url)
   window.location.reload()
 }
 

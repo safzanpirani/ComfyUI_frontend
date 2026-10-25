@@ -7,6 +7,7 @@ import { api } from '@/scripts/api'
 
 import type { ExtensionLoadFailure } from './extensionLoader'
 import {
+  isSafeExtensionBoot,
   loadExtensions,
   reportExtensionLoadFailures,
   shouldLoadExtension
@@ -65,6 +66,15 @@ describe('shouldLoadExtension', () => {
     ).toBe(true)
   })
 
+  it('leaves malformed extension entries to the isolated import failure path', () => {
+    expect(
+      shouldLoadExtension('http://', {
+        isCloudBuild: false,
+        disabledPackPaths: ['/extensions/agent-cushions/']
+      })
+    ).toBe(true)
+  })
+
   it('skips every module from a disabled pack without prefix-matching peers', () => {
     const disabled = ['/extensions/agent-cushions/']
 
@@ -95,6 +105,19 @@ describe('shouldLoadExtension', () => {
         disableAllCustomExtensions: true
       })
     ).toBe(false)
+  })
+})
+
+describe('isSafeExtensionBoot', () => {
+  it.for([
+    { search: '?safe', expected: true },
+    { search: '?safe=1', expected: true },
+    { search: '?safe=true', expected: true },
+    { search: '?safe=0', expected: false },
+    { search: '?safe=false', expected: false },
+    { search: '', expected: false }
+  ])('reads $search as $expected', ({ search, expected }) => {
+    expect(isSafeExtensionBoot(search)).toBe(expected)
   })
 })
 

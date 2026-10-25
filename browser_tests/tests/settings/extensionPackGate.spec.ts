@@ -9,10 +9,6 @@ test.use({
   }
 })
 
-// No `/api/settings` route mock: `initialSettings` already writes the disabled
-// pack through the fixture's `set_settings` call, so the real settings response
-// carries it. Mocking the GET would serve only this one key and drop every
-// other fixture default, which is how a gate test starts failing on onboarding.
 test.beforeEach(async ({ page }) => {
   await page.route('**/extensions', (route) =>
     route.fulfill({
@@ -27,19 +23,15 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-test.describe(
-  'Extension pack import gate',
-  { tag: ['@settings', '@canvas'] },
-  () => {
-    test("does not apply a disabled pack's top-level visual side effects", async ({
-      comfyPage,
-      page
-    }) => {
-      await expect(comfyPage.canvas).toBeVisible()
-      expect(
-        await comfyPage.settings.getSetting('Comfy.Extension.DisabledPacks')
-      ).toEqual(['/extensions/agent-cushions/'])
-      await expect(page.locator('body')).toHaveCSS('opacity', '1')
-    })
-  }
-)
+test.describe('Extension pack import gate', { tag: ['@ui', '@canvas'] }, () => {
+  test("does not apply a disabled pack's top-level visual side effects", async ({
+    comfyPage,
+    page
+  }) => {
+    await expect(comfyPage.canvas).toBeVisible()
+    expect(
+      await comfyPage.settings.getSetting('Comfy.Extension.DisabledPacks')
+    ).toEqual(['/extensions/agent-cushions/'])
+    await expect(page.locator('body')).toHaveCSS('opacity', '1')
+  })
+})

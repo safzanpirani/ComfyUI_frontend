@@ -14,6 +14,7 @@
           <TableCell class="text-right">
             <Switch
               :model-value="enabledByPath[pack]"
+              :disabled="disabled"
               :aria-label="
                 $t('g.extensionPackToggle', { name: packName(pack) })
               "
@@ -36,17 +37,21 @@ import TableCell from '@/components/ui/table/TableCell.vue'
 import TableHead from '@/components/ui/table/TableHead.vue'
 import TableHeader from '@/components/ui/table/TableHeader.vue'
 import TableRow from '@/components/ui/table/TableRow.vue'
+import { extensionPackName } from '@/platform/settings/utils/extensionPack'
 
-const { packs, enabledByPath } = defineProps<{
+const {
+  packs,
+  enabledByPath,
+  disabled = false
+} = defineProps<{
   packs: string[]
   enabledByPath: Record<string, boolean>
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
   setEnabled: [path: string, enabled: boolean]
 }>()
 
-function packName(path: string) {
-  return path.split('/').filter(Boolean).at(-1) ?? path
-}
+const packName = extensionPackName
 </script>
