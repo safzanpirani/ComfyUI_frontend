@@ -27,6 +27,7 @@ import { useExecutionErrorStore } from '@/stores/executionErrorStore'
 import { useExtensionStore } from '@/stores/extensionStore'
 import { useNodeOutputStore } from '@/stores/nodeOutputStore'
 import { nodeTypesMayStillArrive } from '@/platform/lateCustomNodes/lateNodeTypes'
+import { showPlaceholdersAsWaiting } from '@/platform/lateCustomNodes/waitingNodes'
 import { useMissingModelStore } from '@/platform/workflowErrors/missingModel/missingModelStore'
 import { useMissingMediaStore } from '@/platform/workflowErrors/missingMedia/missingMediaStore'
 import { app } from '@/scripts/app'
@@ -94,6 +95,7 @@ vi.mock(import('@/services/dialogService'))
 vi.mock(import('@/scripts/app'))
 
 vi.mock(import('@/platform/lateCustomNodes/lateNodeTypes'))
+vi.mock(import('@/platform/lateCustomNodes/waitingNodes'))
 
 const storeThumbnailMock = vi.hoisted(() => vi.fn())
 
@@ -193,7 +195,7 @@ describe('useWorkflowService', () => {
       ).toHaveBeenCalledWith([])
     })
 
-    it('leaves missing nodes alone while late custom node packs may still add the types', () => {
+    it('shows nodes as waiting, not missing, while late custom node packs may still add the types', () => {
       vi.mocked(nodeTypesMayStillArrive).mockReturnValue(true)
       const workflow = createWorkflow({ missingNodeTypes: ['LatePackNode'] })
 
@@ -202,6 +204,7 @@ describe('useWorkflowService', () => {
       expect(
         useMissingNodesErrorStore().surfaceMissingNodes
       ).not.toHaveBeenCalled()
+      expect(showPlaceholdersAsWaiting).toHaveBeenCalledWith(app.rootGraph)
     })
 
     it('should surface missing nodes and cache warnings', () => {
