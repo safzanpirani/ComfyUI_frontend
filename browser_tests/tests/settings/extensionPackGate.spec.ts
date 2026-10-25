@@ -2,7 +2,6 @@ import {
   comfyExpect as expect,
   comfyPageFixture as test
 } from '@e2e/fixtures/ComfyPage'
-import type { Settings } from '@/platform/settings/types'
 
 test.use({
   initialSettings: {
@@ -10,15 +9,11 @@ test.use({
   }
 })
 
+// No `/api/settings` route mock: `initialSettings` already writes the disabled
+// pack through the fixture's `set_settings` call, so the real settings response
+// carries it. Mocking the GET would serve only this one key and drop every
+// other fixture default, which is how a gate test starts failing on onboarding.
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/settings', async (route) => {
-    if (route.request().method() !== 'GET') return route.fallback()
-    await route.fulfill({
-      json: {
-        'Comfy.Extension.DisabledPacks': ['/extensions/agent-cushions/']
-      } satisfies Partial<Settings>
-    })
-  })
   await page.route('**/extensions', (route) =>
     route.fulfill({
       json: ['/extensions/agent-cushions/main.js']
