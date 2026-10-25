@@ -1259,24 +1259,33 @@ export class ComfyApp implements IComfyApp {
     useWorkflowService().beforeLoadNewGraph(clean)
     await useExtensionService().invokeExtensionsAsync('beforeLoadGraph')
 
-    ChangeTracker.isLoadingGraph = true
-    let reset_invalid_values = false
-    const missingNodeTypes: MissingNodeType[] = []
+    if (!clean && workflow instanceof ComfyWorkflow && !workflow.graph) {
+      await useExtensionService().invokeExtensionsAsync(
+        'onGraphLoadError',
+        new Error('The workflow graph was released while preparing the load')
+      )
+      return false
+    }
     const graph = this.rootGraphForLoad(
       workflow instanceof ComfyWorkflow ? workflow : null,
       clean
     )
+    ChangeTracker.isLoadingGraph = true
+    let reset_invalid_values = false
+    const missingNodeTypes: MissingNodeType[] = []
     try {
-      useExecutionErrorStore().setActiveGraph(null)
+      if (clean || graph === this.rootGraph) {
+        useExecutionErrorStore().setActiveGraph(null)
 
-      if (skipAssetScans) {
-        useMissingModelStore().createVerificationAbortController().abort()
-        useMissingMediaStore().createVerificationAbortController().abort()
-        useMissingModelStore().setMissingModels([])
-        useMissingMediaStore().setMissingMedia([])
-      } else {
-        useMissingModelStore().clearMissingModels()
-        useMissingMediaStore().clearMissingMedia()
+        if (skipAssetScans) {
+          useMissingModelStore().createVerificationAbortController().abort()
+          useMissingMediaStore().createVerificationAbortController().abort()
+          useMissingModelStore().setMissingModels([])
+          useMissingMediaStore().setMissingMedia([])
+        } else {
+          useMissingModelStore().clearMissingModels()
+          useMissingMediaStore().clearMissingMedia()
+        }
       }
 
       if (clean) {
@@ -1300,14 +1309,8 @@ export class ComfyApp implements IComfyApp {
         const { graphData: validatedGraphData } =
           await useWorkflowValidation().validateWorkflow(graphData)
 
-        // If the validation failed, use the original graph data.
-        // Ideally we should not block users from loading the workflow.
         graphData = validatedGraphData ?? graphData
       }
-      // Only show the reroute migration warning if the workflow does not have native
-      // reroutes. Merging reroute network has great complexity, and it is not supported
-      // for now.
-      // See: https://github.com/Comfy-Org/ComfyUI_frontend/issues/3317
       if (
         checkForRerouteMigration &&
         graphData.version === 0.4 &&
@@ -1347,7 +1350,6 @@ export class ComfyApp implements IComfyApp {
       const nodeReplacementStore = useNodeReplacementStore()
       await nodeReplacementStore.load()
 
-      // Collect missing node types from all nodes (root + subgraphs)
       const collectMissingNodes = (
         nodes: readonly FlattenableWorkflowNode[],
         pathPrefix: string = '',
@@ -1362,8 +1364,6 @@ export class ComfyApp implements IComfyApp {
         }
         for (const n of nodes) {
           if (!(n.type in LiteGraph.registered_node_types)) {
-            // Always sanitize so configure() can handle unregistered types,
-            // but only report as missing if the node is active.
             const isMuted =
               n.mode === LGraphEventMode.NEVER ||
               n.mode === LGraphEventMode.BYPASS
@@ -1436,14 +1436,12 @@ export class ComfyApp implements IComfyApp {
         restore_view &&
         useSettingStore().get('Comfy.EnableWorkflowViewRestore')
       ) {
-        // Always fit view for templates to ensure they're visible on load
         if (openSource === 'template') {
           useLitegraphService().fitView()
         } else if (savedCameraState) {
           this.canvas.ds.offset = savedCameraState.offset
           this.canvas.ds.scale = savedCameraState.scale
 
-          // Fit view if no nodes visible in restored viewport
           this.canvas.ds.computeVisibleArea(this.canvas.viewport)
           if (
             this.canvas.visible_area.width &&
@@ -1465,14 +1463,10 @@ export class ComfyApp implements IComfyApp {
       try {
         graph.configure(graphData as ISerialisedGraph)
 
-        // Save original renderer version before scaling (it gets modified during scaling)
         const originalMainGraphRenderer = graph.extra.workflowRendererVersion
 
-        // Scale main graph
         ensureCorrectLayoutScale(originalMainGraphRenderer, graph)
 
-        // Scale all subgraphs that were loaded with the workflow
-        // Use original main graph renderer as fallback (not the modified one)
         for (const subgraph of graph.subgraphs.values()) {
           ensureCorrectLayoutScale(
             subgraph.extra.workflowRendererVersion || originalMainGraphRenderer,
@@ -1525,8 +1519,6 @@ export class ComfyApp implements IComfyApp {
           snapPoint(size, snapTo, 'ceil')
           node.setSize(size)
           if (node.widgets) {
-            // If you break something in the backend and want to patch workflows in the frontend
-            // This is the place to do this
             for (const widget of node.widgets) {
               if (node.type == 'KSampler' || node.type == 'KSamplerAdvanced') {
                 if (widget.name == 'sampler_name') {
@@ -1579,6 +1571,21 @@ export class ComfyApp implements IComfyApp {
         missingNodeTypes
       )
 
+      if (
+        !clean &&
+        workflow instanceof ComfyWorkflow &&
+        graph !== this.rootGraph
+      ) {
+        workflow.changeTracker?.reset(graphData)
+        for (const subgraph of this.rootGraph.subgraphs.values()) {
+          useSubgraphService().registerNewSubgraph(
+            subgraph,
+            subgraph.asSerialisable()
+          )
+        }
+        return true
+      }
+
       const effectiveShareId =
         shareId ??
         (workflow instanceof ComfyWorkflow ? workflow.shareId : undefined)
@@ -1610,14 +1617,8 @@ export class ComfyApp implements IComfyApp {
       }
       await useExtensionService().invokeExtensionsAsync('afterLoadGraph')
       ChangeTracker.isLoadingGraph = false
-      // Capture the workflow this load activated before the asset-scan awaits
-      // below can hand control back and let the user switch to another one.
       activatedWorkflow = useWorkflowStore().activeWorkflow ?? undefined
 
-      // Drop missing-node entries whose enclosing subgraph is
-      // muted/bypassed. The initial JSON scan only checks each node's
-      // own mode; the cascade from an inactive container is applied here
-      // using the now-configured live graph.
       const activeMissingNodeTypes = missingNodeTypes.filter(
         (n) =>
           typeof n === 'string' ||
@@ -1672,13 +1673,11 @@ export class ComfyApp implements IComfyApp {
       })
       return activatedWorkflow ?? true
     } finally {
-      // Finally: a throwing load still repairs the URL.
       void useSubgraphNavigationStore().updateHash(
         'workflow-load',
         workflowNavigationId
       )
       ChangeTracker.isLoadingGraph = false
-      // The retirement watcher skips transitions made during the load.
       useExecutionErrorStore().retireResolvedMissingNodePromptError()
       reconcileResourceErrors?.()
     }
