@@ -178,15 +178,6 @@ export const useSettingStore = defineStore('setting', () => {
     return settingValues.value[key] !== undefined
   }
 
-  /**
-   * Apply a setting value locally: clone, migrate, update the in-memory
-   * store, and fire onChange. Returns the migrated value, or `undefined`
-   * when the value is unchanged and was skipped.
-   *
-   * The store is updated before `onChange` runs so that handlers reading
-   * this setting — including handlers of other settings this one cascades
-   * into — observe the new value rather than the one it replaced.
-   */
   async function applySettingLocally<K extends keyof Settings>(
     key: K,
     value: Settings[K]
@@ -211,8 +202,6 @@ export const useSettingStore = defineStore('setting', () => {
       settingChanged.trigger
     )
 
-    // Handlers are awaited, so a slow one lets a later change to this key land
-    // first. That change owns the value now; persisting ours would revert it.
     if (latestWrite.get(key) !== writeToken) return undefined
     return {
       previousValue: oldValue,
