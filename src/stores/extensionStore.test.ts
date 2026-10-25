@@ -62,7 +62,8 @@ describe('extensionStore', () => {
       ])
       expect(store.isExtensionPackEnabled('/extensions/a/')).toBe(true)
       expect(store.isExtensionPackEnabled('/extensions/b/')).toBe(false)
-      expect(store.inactiveDisabledExtensionPackPaths).toEqual([
+      expect(store.getCurrentDisabledExtensionPackPaths()).toEqual([
+        '/extensions/b/',
         '/extensions/missing/'
       ])
     })

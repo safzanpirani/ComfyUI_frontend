@@ -1,6 +1,7 @@
-import { assert, describe, expect, it, vi } from 'vitest'
+import { afterEach, assert, describe, expect, it, vi } from 'vitest'
 
 import { LGraphCanvas, LGraphNode } from '@/lib/litegraph/src/litegraph'
+import { useSettingStore } from '@/platform/settings/settingStore'
 import { EXTENSION_FAILURES_TRUNCATED_FIELD } from '@/platform/telemetry/extensionLoadTelemetry'
 import { reportError } from '@/platform/telemetry/reportError'
 import { api } from '@/scripts/api'
@@ -14,6 +15,12 @@ import {
 } from './extensionLoader'
 
 vi.mock(import('@/platform/telemetry/reportError'))
+
+afterEach(() => {
+  useSettingStore().$patch({
+    settingValues: { 'Comfy.Extension.DisabledPacks': [] }
+  })
+})
 
 const coreLoad = vi.hoisted(() => ({
   onConfigure: undefined as unknown,
@@ -75,28 +82,24 @@ describe('shouldLoadExtension', () => {
     ).toBe(true)
   })
 
-  it('skips every module from a disabled pack without prefix-matching peers', () => {
-    const disabled = ['/extensions/agent-cushions/']
-
-    expect(
-      shouldLoadExtension('/extensions/agent-cushions/main.js', {
-        isCloudBuild: false,
-        disabledPackPaths: disabled
-      })
-    ).toBe(false)
-    expect(
-      shouldLoadExtension('/extensions/agent-cushions/nested/panel.js', {
-        isCloudBuild: false,
-        disabledPackPaths: disabled
-      })
-    ).toBe(false)
-    expect(
-      shouldLoadExtension('/extensions/agent-cushions-extra/main.js', {
-        isCloudBuild: false,
-        disabledPackPaths: disabled
-      })
-    ).toBe(true)
-  })
+  it.for([
+    { extension: '/extensions/agent-cushions/main.js', expected: false },
+    {
+      extension: '/extensions/agent-cushions/nested/panel.js',
+      expected: false
+    },
+    { extension: '/extensions/agent-cushions-extra/main.js', expected: true }
+  ])(
+    'admits $extension as $expected with a disabled pack',
+    ({ extension, expected }) => {
+      expect(
+        shouldLoadExtension(extension, {
+          isCloudBuild: false,
+          disabledPackPaths: ['/extensions/agent-cushions/']
+        })
+      ).toBe(expected)
+    }
+  )
 
   it('skips every custom extension during a safe boot', () => {
     expect(
@@ -298,6 +301,49 @@ describe('extension loading', () => {
   })
 
   describe('loadExtensions', () => {
+    it('keeps custom modules inert while core extensions register in safe mode', async () => {
+      const customExtensionLoaded = vi.fn()
+      vi.stubGlobal('customExtensionLoaded', customExtensionLoaded)
+      window.history.replaceState(null, '', '/?safe')
+      vi.spyOn(api, 'getExtensions').mockResolvedValue([
+        '/extensions/pack-a/main.js'
+      ])
+      vi.spyOn(api, 'fileURL').mockReturnValue(
+        'data:text/javascript,globalThis.customExtensionLoaded()'
+      )
+
+      await loadExtensions()
+
+      expect(customExtensionLoaded).not.toHaveBeenCalled()
+      expect(coreLoad.onConfigure).toBe(LGraphNode.prototype.onConfigure)
+    })
+
+    it('falls back safely when the persisted disabled-pack setting is malformed', async () => {
+      window.history.replaceState(null, '', '/?safe')
+      const settingStore = useSettingStore()
+      settingStore.$patch({
+        settingValues: {
+          'Comfy.Extension.DisabledPacks': {} as never
+        }
+      })
+      vi.spyOn(api, 'getExtensions').mockResolvedValue([
+        '/extensions/pack-a/main.js'
+      ])
+
+      await loadExtensions()
+
+      expect(coreLoad.onConfigure).toBe(LGraphNode.prototype.onConfigure)
+      expect(reportError).toHaveBeenCalledOnce()
+      expect(reportError).toHaveBeenCalledWith(expect.any(TypeError), {
+        errorType: 'invalid_extension_pack_setting',
+        surface: 'platform',
+        level: 'warning'
+      })
+      settingStore.$patch({
+        settingValues: { 'Comfy.Extension.DisabledPacks': [] }
+      })
+    })
+
     it('reports every failing custom import as one aggregate', async () => {
       vi.spyOn(api, 'getExtensions').mockResolvedValue([
         '/extensions/pack-a/main.js',

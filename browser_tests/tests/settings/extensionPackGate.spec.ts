@@ -1,3 +1,5 @@
+import type { GetExtensionsResponse } from '@comfyorg/ingest-types'
+
 import {
   comfyExpect as expect,
   comfyPageFixture as test
@@ -12,7 +14,9 @@ test.use({
 test.beforeEach(async ({ page }) => {
   await page.route('**/extensions', (route) =>
     route.fulfill({
-      json: ['/extensions/agent-cushions/main.js']
+      json: [
+        '/extensions/agent-cushions/main.js'
+      ] satisfies GetExtensionsResponse
     })
   )
   await page.route('**/extensions/agent-cushions/main.js*', (route) =>

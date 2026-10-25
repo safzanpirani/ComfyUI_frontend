@@ -1,11 +1,12 @@
 import { render, screen, within } from '@testing-library/vue'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { testI18n } from '@/utils/__tests__/testI18n'
 import { useToast } from '@/components/ui/toast/toastStore'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { reportError } from '@/platform/telemetry/reportError'
+import { api } from '@/scripts/api'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 import ExtensionPanel from './ExtensionPanel.vue'
@@ -29,8 +30,6 @@ function pendingChangeFor(subject: string) {
 }
 
 describe('ExtensionPanel', () => {
-  afterEach(() => window.history.replaceState(null, '', '/'))
-
   it('preserves the selected filter when clicked again', async () => {
     const user = userEvent.setup()
     renderPanel()
@@ -79,7 +78,7 @@ describe('ExtensionPanel', () => {
   it('toggles selection from anywhere on the row, including cell padding, except its enable switch', async () => {
     const user = userEvent.setup()
     registerExtensions('Alpha')
-    vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+    vi.spyOn(useSettingStore(), 'set').mockResolvedValue(undefined)
     renderPanel()
     const checkbox = screen.getByRole('checkbox', { name: 'Select Alpha' })
     const [checkboxCell, nameCell, switchCell] = within(
@@ -105,7 +104,9 @@ describe('ExtensionPanel', () => {
   it('replaces the selection with the visible rows on select all and clears it on unselect', async () => {
     const user = userEvent.setup()
     registerExtensions('Alpha', 'Zebra')
-    const setSetting = vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+    const setSetting = vi
+      .spyOn(useSettingStore(), 'set')
+      .mockResolvedValue(undefined)
     renderPanel()
     const search = screen.getByRole('combobox')
     const selectAll = () => screen.getByRole('checkbox', { name: 'Select All' })
@@ -144,7 +145,9 @@ describe('ExtensionPanel', () => {
   it('toggles only the selected extensions and offers a reload while they differ', async () => {
     const user = userEvent.setup()
     registerExtensions('Alpha', 'Zebra')
-    const setSetting = vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+    const setSetting = vi
+      .spyOn(useSettingStore(), 'set')
+      .mockResolvedValue(undefined)
     const reload = vi.spyOn(window.location, 'reload').mockReturnValue()
 
     renderPanel()
@@ -185,17 +188,19 @@ describe('ExtensionPanel', () => {
       ['/extensions/agent-cushions/'],
       ['/extensions/missing/']
     )
-    const setSetting = vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+    const apiWrite = vi
+      .spyOn(api, 'storeSetting')
+      .mockResolvedValue(new Response())
 
     renderPanel()
     await user.click(
       screen.getByRole('switch', { name: 'Extension pack agent-cushions' })
     )
 
-    expect(setSetting).toHaveBeenLastCalledWith(
-      'Comfy.Extension.DisabledPacks',
-      ['/extensions/missing/', '/extensions/agent-cushions/']
-    )
+    expect(apiWrite).toHaveBeenLastCalledWith('Comfy.Extension.DisabledPacks', [
+      '/extensions/missing/',
+      '/extensions/agent-cushions/'
+    ])
     expect(
       screen.getByRole('button', { name: 'Reload to apply changes' })
     ).toBeVisible()
@@ -215,7 +220,7 @@ describe('ExtensionPanel', () => {
         'Comfy.Extension.DisabledPacks': ['/extensions/agent-cushions/']
       }
     })
-    vi.spyOn(settingStore, 'set').mockResolvedValue()
+    vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     renderPanel()
     await user.click(
@@ -228,11 +233,8 @@ describe('ExtensionPanel', () => {
   it('keeps pending pack state across panel remounts', async () => {
     const user = userEvent.setup()
     const extensionStore = useExtensionStore()
-    const settingStore = useSettingStore()
     extensionStore.loadExtensionPackPaths(['/extensions/agent-cushions/'], [])
-    vi.spyOn(settingStore, 'set').mockImplementation(async (key, value) => {
-      settingStore.$patch({ settingValues: { [key]: value } })
-    })
+    vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     const firstPanel = renderPanel()
     await user.click(
@@ -249,12 +251,12 @@ describe('ExtensionPanel', () => {
 
   it('keeps pack controls unavailable until the setting persists', async () => {
     const user = userEvent.setup()
-    let resolveSetting = () => {}
-    const pendingSetting = new Promise<void>((resolve) => {
+    let resolveSetting = (_response: Response) => {}
+    const pendingSetting = new Promise<Response>((resolve) => {
       resolveSetting = resolve
     })
     useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
-    vi.spyOn(useSettingStore(), 'set').mockReturnValue(pendingSetting)
+    vi.spyOn(api, 'storeSetting').mockReturnValue(pendingSetting)
 
     renderPanel()
     const packSwitch = screen.getByRole('switch', {
@@ -267,8 +269,42 @@ describe('ExtensionPanel', () => {
       screen.getByRole('button', { name: 'Reload to apply changes' })
     ).toBeDisabled()
 
-    resolveSetting()
+    resolveSetting(new Response())
     await vi.waitFor(() => expect(packSwitch).toBeEnabled())
+  })
+
+  it('keeps a pending pack save locked across panel replacement', async () => {
+    const user = userEvent.setup()
+    let rejectSetting = (_error: Error) => {}
+    const pendingSetting = new Promise<Response>((_resolve, reject) => {
+      rejectSetting = reject
+    })
+    const apiWrite = vi
+      .spyOn(api, 'storeSetting')
+      .mockReturnValueOnce(pendingSetting)
+      .mockResolvedValueOnce(new Response())
+    useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
+
+    const firstPanel = renderPanel()
+    await user.click(screen.getByRole('switch', { name: 'Extension pack a' }))
+    firstPanel.unmount()
+    renderPanel()
+
+    const replacementSwitch = screen.getByRole('switch', {
+      name: 'Extension pack a'
+    })
+    expect(replacementSwitch).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Reload to apply changes' })
+    ).toBeDisabled()
+    await user.click(replacementSwitch)
+    expect(apiWrite).toHaveBeenCalledTimes(1)
+
+    rejectSetting(new Error('setting unavailable'))
+    await vi.waitFor(() => expect(replacementSwitch).toBeEnabled())
+    expect(replacementSwitch).toBeChecked()
+    expect(useSettingStore().get('Comfy.Extension.DisabledPacks')).toEqual([])
+    expect(apiWrite).toHaveBeenCalledTimes(2)
   })
 
   it('restores the pack and notifies when persistence fails', async () => {
@@ -276,7 +312,10 @@ describe('ExtensionPanel', () => {
     const settingStore = useSettingStore()
     useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
     const failure = new Error('setting unavailable')
-    const setSetting = vi.spyOn(settingStore, 'set').mockRejectedValue(failure)
+    const apiWrite = vi
+      .spyOn(api, 'storeSetting')
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(new Response())
 
     renderPanel()
     const packSwitch = screen.getByRole('switch', {
@@ -285,19 +324,22 @@ describe('ExtensionPanel', () => {
     await user.click(packSwitch)
 
     await vi.waitFor(() => expect(packSwitch).toBeChecked())
-    expect(setSetting).toHaveBeenNthCalledWith(
+    expect(apiWrite).toHaveBeenNthCalledWith(
       1,
       'Comfy.Extension.DisabledPacks',
       ['/extensions/a/']
     )
-    expect(setSetting).toHaveBeenNthCalledWith(
+    expect(apiWrite).toHaveBeenNthCalledWith(
       2,
       'Comfy.Extension.DisabledPacks',
       []
     )
+    expect(settingStore.get('Comfy.Extension.DisabledPacks')).toEqual([])
     expect(reportError).toHaveBeenCalledWith(failure, {
       errorType: 'failure_writing_extension_pack_setting',
-      surface: 'platform'
+      surface: 'platform',
+      tags: { rollback_failed: false },
+      context: undefined
     })
     expect(useToast().toasts).toContainEqual(
       expect.objectContaining({
@@ -312,7 +354,7 @@ describe('ExtensionPanel', () => {
   it('decodes pack names for display and accessibility', async () => {
     const user = userEvent.setup()
     useExtensionStore().loadExtensionPackPaths(['/extensions/My%20Pack/'], [])
-    vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+    vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
 
     renderPanel()
     await user.click(
@@ -325,10 +367,14 @@ describe('ExtensionPanel', () => {
   it('leaves safe mode before reloading pack changes', async () => {
     const user = userEvent.setup()
     useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
-    vi.spyOn(useSettingStore(), 'set').mockResolvedValue()
+    vi.spyOn(api, 'storeSetting').mockResolvedValue(new Response())
     const reload = vi.spyOn(window.location, 'reload').mockReturnValue()
     const historyState = { back: '/workflows' }
-    window.history.replaceState(historyState, '', '/?safe')
+    window.history.replaceState(
+      historyState,
+      '',
+      '/workflows?other=kept&safe=1#selected'
+    )
 
     renderPanel()
     await user.click(screen.getByRole('switch', { name: 'Extension pack a' }))
@@ -336,7 +382,9 @@ describe('ExtensionPanel', () => {
       screen.getByRole('button', { name: 'Reload to apply changes' })
     )
 
-    expect(window.location.search).toBe('')
+    expect(
+      window.location.pathname + window.location.search + window.location.hash
+    ).toBe('/workflows?other=kept#selected')
     expect(window.history.state).toEqual(historyState)
     expect(reload).toHaveBeenCalledOnce()
   })

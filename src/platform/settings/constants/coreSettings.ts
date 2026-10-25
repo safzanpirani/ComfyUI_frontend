@@ -9,6 +9,7 @@ import { CANVAS_NAVIGATION_PRESETS } from '@/platform/settings/constants/canvasN
 import { AGENT_CONSENT_OFFER_DECLINED_SETTING_ID } from '@/platform/settings/constants/agent'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import type { SettingParams } from '@/platform/settings/types'
+import { normalizeDisabledExtensionPackPaths } from '@/platform/settings/utils/extensionPack'
 import type { Keybinding } from '@/platform/keybindings/types'
 import { NodeBadgeMode } from '@/types/nodeSource'
 import { LinkReleaseTriggerAction } from '@/types/searchBoxTypes'
@@ -694,6 +695,7 @@ export const CORE_SETTINGS: SettingParams[] = [
     name: 'Disabled extension packs',
     type: 'hidden',
     defaultValue: [] as string[],
+    migrateDeprecatedValue: normalizeDisabledExtensionPackPaths,
     versionAdded: '1.59.0'
   },
   {

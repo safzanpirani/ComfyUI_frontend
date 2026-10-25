@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, markRaw, ref } from 'vue'
 
+import { useSettingStore } from '@/platform/settings/settingStore'
+import { reportError } from '@/platform/telemetry/reportError'
 import type { ComfyExtension } from '@/types/comfy'
+import { getErrorMessage } from '@/utils/errorUtil'
 
 /**
  * These extensions are always active, even if they are disabled in the setting.
@@ -32,6 +35,7 @@ export const useExtensionStore = defineStore('extension', () => {
   const disabledExtensionNames = ref<Set<string>>(new Set())
   const extensionPackPaths = ref<string[]>([])
   const disabledExtensionPackPaths = ref<Set<string>>(new Set())
+  const isSavingExtensionPacks = ref(false)
 
   // Disabled extension names that are currently not in the extension list.
   // If a node pack is disabled in the backend, we shouldn't remove the configuration
@@ -41,12 +45,6 @@ export const useExtensionStore = defineStore('extension', () => {
       (name) => !(name in extensionByName.value)
     )
   })
-  const inactiveDisabledExtensionPackPaths = computed(() => {
-    return Array.from(disabledExtensionPackPaths.value).filter(
-      (path) => !extensionPackPaths.value.includes(path)
-    )
-  })
-
   const isExtensionInstalled = (name: string) => name in extensionByName.value
 
   const isExtensionEnabled = (name: string) =>
@@ -100,6 +98,68 @@ export const useExtensionStore = defineStore('extension', () => {
   const isExtensionPackEnabled = (path: string) =>
     !disabledExtensionPackPaths.value.has(path)
 
+  function getCurrentDisabledExtensionPackPaths(): string[] {
+    const storedPaths = useSettingStore().get('Comfy.Extension.DisabledPacks')
+    return Array.isArray(storedPaths)
+      ? storedPaths
+      : Array.from(disabledExtensionPackPaths.value)
+  }
+
+  async function writeDisabledExtensionPackPaths(
+    paths: string[]
+  ): Promise<unknown | undefined> {
+    try {
+      const result = await useSettingStore().setWithResult(
+        'Comfy.Extension.DisabledPacks',
+        paths
+      )
+      return result?.ok === false ? result.error : undefined
+    } catch (error) {
+      return error
+    }
+  }
+
+  function reportExtensionPackWriteFailure(
+    cause: unknown,
+    rollbackCause: unknown
+  ) {
+    reportError(cause, {
+      errorType: 'failure_writing_extension_pack_setting',
+      surface: 'platform',
+      tags: { rollback_failed: rollbackCause !== undefined },
+      context:
+        rollbackCause === undefined
+          ? undefined
+          : { rollback_error: getErrorMessage(rollbackCause) }
+    })
+  }
+
+  async function setExtensionPackEnabled(
+    path: string,
+    enabled: boolean
+  ): Promise<boolean | undefined> {
+    if (isSavingExtensionPacks.value) return
+
+    const previousDisabledPaths = getCurrentDisabledExtensionPackPaths()
+    const nextDisabledPaths = enabled
+      ? previousDisabledPaths.filter((disabledPath) => disabledPath !== path)
+      : [...new Set([...previousDisabledPaths, path])]
+    isSavingExtensionPacks.value = true
+
+    try {
+      const cause = await writeDisabledExtensionPackPaths(nextDisabledPaths)
+      if (cause === undefined) return true
+
+      const rollbackCause = await writeDisabledExtensionPackPaths(
+        previousDisabledPaths
+      )
+      reportExtensionPackWriteFailure(cause, rollbackCause)
+      return false
+    } finally {
+      isSavingExtensionPacks.value = false
+    }
+  }
+
   /**
    * Core extensions are extensions that are defined in the core package.
    * See /extensions/core/index.ts for the list.
@@ -121,8 +181,8 @@ export const useExtensionStore = defineStore('extension', () => {
     extensions,
     enabledExtensions,
     extensionPackPaths,
+    isSavingExtensionPacks,
     inactiveDisabledExtensionNames,
-    inactiveDisabledExtensionPackPaths,
     isExtensionInstalled,
     isExtensionEnabled,
     isExtensionReadOnly,
@@ -131,6 +191,8 @@ export const useExtensionStore = defineStore('extension', () => {
     loadDisabledExtensionNames,
     loadExtensionPackPaths,
     isExtensionPackEnabled,
+    getCurrentDisabledExtensionPackPaths,
+    setExtensionPackEnabled,
     captureCoreExtensions,
     isCoreExtension,
     hasThirdPartyExtensions

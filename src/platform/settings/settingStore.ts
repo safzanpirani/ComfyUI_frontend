@@ -99,6 +99,22 @@ async function persistMigration(write: () => Promise<unknown>) {
   }
 }
 
+interface SettingWriteFailure {
+  ok: false
+  error: Error
+}
+
+function settingWriteFailure(
+  response: Response
+): SettingWriteFailure | undefined {
+  if (response.ok) return
+  const reason = response.statusText || 'Request failed'
+  return {
+    ok: false,
+    error: new Error(`Failed to store setting: ${response.status} ${reason}`)
+  }
+}
+
 function settingChangedEvent<K extends keyof Settings>(
   setting: SettingParams | undefined,
   key: K,
@@ -217,13 +233,22 @@ export const useSettingStore = defineStore('setting', () => {
    * @param key - The key of the setting to set.
    * @param value - The value to set.
    */
-  async function set<K extends keyof Settings>(key: K, value: Settings[K]) {
+  async function setWithResult<K extends keyof Settings>(
+    key: K,
+    value: Settings[K]
+  ) {
     const applied = await applySettingLocally(key, value)
     if (applied === undefined) return
-    await api.storeSetting(key, applied.newValue)
+    const response = await api.storeSetting(key, applied.newValue)
+    const failure = settingWriteFailure(response)
+    if (failure) return failure
 
     const event = settingChangedEvent(settingsById.value[key], key, applied)
     if (event) useTelemetry()?.trackSettingChanged(event)
+  }
+
+  async function set<K extends keyof Settings>(key: K, value: Settings[K]) {
+    await setWithResult(key, value)
   }
 
   /**
@@ -437,6 +462,7 @@ export const useSettingStore = defineStore('setting', () => {
     load,
     addSetting,
     set,
+    setWithResult,
     setMany,
     get,
     exists,

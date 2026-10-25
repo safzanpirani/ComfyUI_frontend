@@ -1,5 +1,6 @@
 import { installTouchPointerGuards } from '@/extensions/core/touchPointerGuards'
 import { useSettingStore } from '@/platform/settings/settingStore'
+import { normalizeDisabledExtensionPackPaths } from '@/platform/settings/utils/extensionPack'
 import {
   EXTENSION_FAILURES_TRUNCATED_FIELD,
   EXTENSION_LOAD_ERROR_TYPE
@@ -138,7 +139,9 @@ export async function loadExtensions() {
   extensionStore.loadDisabledExtensionNames(
     settingStore.get('Comfy.Extension.Disabled')
   )
-  const disabledPackPaths = settingStore.get('Comfy.Extension.DisabledPacks')
+  const disabledPackPaths = normalizeDisabledExtensionPackPaths(
+    settingStore.get('Comfy.Extension.DisabledPacks')
+  )
   const disableAllCustomExtensions = isSafeExtensionBoot(window.location.search)
 
   const extensions = await api.getExtensions()

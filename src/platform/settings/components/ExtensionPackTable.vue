@@ -10,13 +10,13 @@
       </TableHeader>
       <TableBody>
         <TableRow v-for="pack in packs" :key="pack">
-          <TableCell>{{ packName(pack) }}</TableCell>
+          <TableCell>{{ extensionPackName(pack) }}</TableCell>
           <TableCell class="text-right">
             <Switch
               :model-value="enabledByPath[pack]"
               :disabled="disabled"
               :aria-label="
-                $t('g.extensionPackToggle', { name: packName(pack) })
+                $t('g.extensionPackToggle', { name: extensionPackName(pack) })
               "
               @update:model-value="
                 (enabled) => emit('setEnabled', pack, enabled)
@@ -52,6 +52,4 @@ const {
 const emit = defineEmits<{
   setEnabled: [path: string, enabled: boolean]
 }>()
-
-const packName = extensionPackName
 </script>

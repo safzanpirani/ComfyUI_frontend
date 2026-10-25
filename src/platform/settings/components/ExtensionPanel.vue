@@ -24,7 +24,7 @@
       <div class="flex justify-end">
         <Button
           variant="destructive"
-          :disabled="isSavingExtensionPacks"
+          :disabled="extensionStore.isSavingExtensionPacks"
           @click="applyChanges"
         >
           {{ $t('g.reloadToApplyChanges') }}
@@ -44,8 +44,8 @@
     </div>
     <ExtensionPackTable
       :packs="extensionStore.extensionPackPaths"
-      :enabled-by-path="editingEnabledExtensionPacks"
-      :disabled="isSavingExtensionPacks"
+      :enabled-by-path="enabledExtensionPacks"
+      :disabled="extensionStore.isSavingExtensionPacks"
       @set-enabled="handleExtensionPackEnabled"
     />
     <ExtensionListTable
@@ -64,7 +64,7 @@
 
 <script setup lang="ts">
 import type { CheckboxCheckedState } from 'reka-ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import Button from '@/components/ui/button/Button.vue'
@@ -79,7 +79,6 @@ import ExtensionListTable from '@/platform/settings/components/ExtensionListTabl
 import ExtensionPackTable from '@/platform/settings/components/ExtensionPackTable.vue'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { extensionPackName } from '@/platform/settings/utils/extensionPack'
-import { reportError } from '@/platform/telemetry/reportError'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 const { t } = useI18n()
@@ -102,8 +101,6 @@ const settingStore = useSettingStore()
 const toast = useToast()
 
 const editingEnabledExtensions = ref<Record<string, boolean>>({})
-const editingEnabledExtensionPacks = ref<Record<string, boolean>>({})
-const isSavingExtensionPacks = ref(false)
 
 const filteredExtensions = computed(() => {
   const extensions = extensionStore.extensions
@@ -166,21 +163,17 @@ onMounted(() => {
   })
 })
 
-watch(
-  () => extensionStore.extensionPackPaths,
-  (paths) => {
-    const disabledPaths = new Set(
-      settingStore.get('Comfy.Extension.DisabledPacks')
-    )
-    editingEnabledExtensionPacks.value = Object.fromEntries(
-      paths.map((path) => [
-        path,
-        editingEnabledExtensionPacks.value[path] ?? !disabledPaths.has(path)
-      ])
-    )
-  },
-  { immediate: true }
-)
+const enabledExtensionPacks = computed(() => {
+  const disabledPaths = new Set(
+    extensionStore.getCurrentDisabledExtensionPackPaths()
+  )
+  return Object.fromEntries(
+    extensionStore.extensionPackPaths.map((path) => [
+      path,
+      !disabledPaths.has(path)
+    ])
+  )
+})
 
 const changedExtensions = computed(() => {
   return extensionStore.extensions.filter(
@@ -193,7 +186,7 @@ const changedExtensions = computed(() => {
 const changedExtensionPacks = computed(() => {
   return extensionStore.extensionPackPaths.filter(
     (path) =>
-      editingEnabledExtensionPacks.value[path] !==
+      enabledExtensionPacks.value[path] !==
       extensionStore.isExtensionPackEnabled(path)
   )
 })
@@ -222,54 +215,13 @@ async function setExtensionEnabled(name: string, enabled: boolean) {
   await updateExtensionStatus()
 }
 
-async function setExtensionPackEnabled(path: string, enabled: boolean) {
-  if (isSavingExtensionPacks.value) return
-
-  const previousEnabled = editingEnabledExtensionPacks.value[path]
-  const previousDisabledPaths = disabledExtensionPackPaths()
-  editingEnabledExtensionPacks.value[path] = enabled
-  isSavingExtensionPacks.value = true
-
-  try {
-    await settingStore.set(
-      'Comfy.Extension.DisabledPacks',
-      disabledExtensionPackPaths()
-    )
-    return true
-  } catch (cause) {
-    reportError(cause, {
-      errorType: 'failure_writing_extension_pack_setting',
-      surface: 'platform'
-    })
-    editingEnabledExtensionPacks.value[path] = previousEnabled
-    await settingStore
-      .set('Comfy.Extension.DisabledPacks', previousDisabledPaths)
-      .catch(() => undefined)
-    return false
-  } finally {
-    isSavingExtensionPacks.value = false
-  }
-}
-
 async function handleExtensionPackEnabled(path: string, enabled: boolean) {
-  if ((await setExtensionPackEnabled(path, enabled)) === false) {
+  if ((await extensionStore.setExtensionPackEnabled(path, enabled)) === false) {
     toast.error(t('g.error'), {
       description: t('g.extensionPackSaveFailed'),
       duration: 5000
     })
   }
-}
-
-function disabledExtensionPackPaths() {
-  const editingDisabledPaths = Object.entries(
-    editingEnabledExtensionPacks.value
-  )
-    .filter(([_, isEnabled]) => !isEnabled)
-    .map(([packPath]) => packPath)
-  return [
-    ...extensionStore.inactiveDisabledExtensionPackPaths,
-    ...editingDisabledPaths
-  ]
 }
 
 const enableAllExtensions = async () => {
