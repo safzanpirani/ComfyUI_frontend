@@ -274,6 +274,37 @@ describe('ExtensionPanel', () => {
     await vi.waitFor(() => expect(extensionSwitch).toBeEnabled())
   })
 
+  it('restores a refused extension change and warns without offering reload', async () => {
+    const user = userEvent.setup()
+    loadExtensionPaths(['/extensions/a/'], [])
+    vi.spyOn(api, 'storeSetting').mockResolvedValue(
+      new Response(null, { status: 500 })
+    )
+
+    renderPanel()
+    const extensionSwitch = screen.getByRole('switch', {
+      name: 'Extension folder a'
+    })
+    await user.click(extensionSwitch)
+
+    await vi.waitFor(() => expect(extensionSwitch).toBeChecked())
+    expect(
+      screen.queryByRole('button', { name: 'Reload to apply changes' })
+    ).not.toBeInTheDocument()
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), {
+      errorType: 'failure_saving_extension_path_setting',
+      surface: 'platform'
+    })
+    expect(useToast().toasts).toContainEqual(
+      expect.objectContaining({
+        kind: 'warning',
+        title: 'Warning',
+        description:
+          'The extension change could not be confirmed. Reload the page before trying again.'
+      })
+    )
+  })
+
   it('keeps an unconfirmed extension change visible across panel replacement', async () => {
     const user = userEvent.setup()
     const failure = new Error('setting unavailable')

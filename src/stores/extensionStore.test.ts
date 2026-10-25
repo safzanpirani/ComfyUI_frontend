@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { useSettingStore } from '@/platform/settings/settingStore'
+import { api } from '@/scripts/api'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 describe('extensionStore', () => {
@@ -59,6 +61,33 @@ describe('extensionStore', () => {
       expect(store.extensionPaths).toEqual(['/extensions/a/', '/extensions/b/'])
       expect(store.isExtensionPathEnabledAtBoot('/extensions/a/')).toBe(true)
       expect(store.isExtensionPathEnabledAtBoot('/extensions/b/')).toBe(false)
+    })
+
+    it('restores a refused extension path change before a successful retry', async () => {
+      const settingStore = useSettingStore()
+      const store = useExtensionStore()
+      settingStore.settingValues['Comfy.Extension.DisabledPacks'] = [
+        '/extensions/a/',
+        '/extensions/missing/'
+      ]
+      vi.spyOn(api, 'storeSetting')
+        .mockResolvedValueOnce(new Response(null, { status: 500 }))
+        .mockResolvedValueOnce(new Response())
+
+      expect(await store.setExtensionPathEnabled('/extensions/a/', true)).toBe(
+        false
+      )
+      expect(settingStore.get('Comfy.Extension.DisabledPacks')).toEqual([
+        '/extensions/a/',
+        '/extensions/missing/'
+      ])
+
+      expect(await store.setExtensionPathEnabled('/extensions/a/', true)).toBe(
+        true
+      )
+      expect(settingStore.get('Comfy.Extension.DisabledPacks')).toEqual([
+        '/extensions/missing/'
+      ])
     })
   })
 

@@ -3,6 +3,7 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { reportError } from '@/platform/telemetry/reportError'
+import { api } from '@/scripts/api'
 import type { ComfyExtension } from '@/types/comfy'
 
 /**
@@ -193,10 +194,28 @@ export const useExtensionStore = defineStore('extension', () => {
     isSavingExtensionPaths.value = true
 
     try {
-      await useSettingStore().set(
+      const settingStore = useSettingStore()
+      settingStore.settingValues['Comfy.Extension.DisabledPacks'] =
+        nextDisabledPaths
+      const response = await api.storeSetting(
         'Comfy.Extension.DisabledPacks',
         nextDisabledPaths
       )
+      if (!response.ok) {
+        settingStore.settingValues['Comfy.Extension.DisabledPacks'] =
+          previousDisabledPaths
+        const reason = response.statusText || 'Request failed'
+        reportError(
+          new Error(
+            `Failed to store disabled extension paths: ${response.status} ${reason}`
+          ),
+          {
+            errorType: 'failure_saving_extension_path_setting',
+            surface: 'platform'
+          }
+        )
+        return false
+      }
       return true
     } catch (cause) {
       reportError(cause, {
