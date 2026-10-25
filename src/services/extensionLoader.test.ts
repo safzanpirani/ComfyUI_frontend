@@ -324,7 +324,7 @@ describe('extension loading', () => {
       ])
     })
 
-    it('falls back safely when the persisted disabled-pack setting is malformed', async () => {
+    it('falls back safely when persisted disabled extension paths are malformed', async () => {
       window.history.replaceState(null, '', '/?safe')
       const settingStore = useSettingStore()
       vi.mocked(fetch).mockResolvedValueOnce(
