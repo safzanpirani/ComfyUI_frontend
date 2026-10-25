@@ -88,7 +88,7 @@ describe('shouldLoadExtension', () => {
     },
     { extension: '/extensions/agent-cushions-extra/main.js', expected: true }
   ])(
-    'admits $extension as $expected with a disabled pack',
+    'admits $extension as $expected with a disabled extension path',
     ({ extension, expected }) => {
       expect(
         shouldLoadExtension(extension, {
