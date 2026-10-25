@@ -79,6 +79,7 @@ import ExtensionListTable from '@/platform/settings/components/ExtensionListTabl
 import ExtensionPackTable from '@/platform/settings/components/ExtensionPackTable.vue'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { extensionPackName } from '@/platform/settings/utils/extensionPack'
+import { reportError } from '@/platform/telemetry/reportError'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 const { t } = useI18n()
@@ -235,16 +236,15 @@ async function setExtensionPackEnabled(path: string, enabled: boolean) {
       disabledExtensionPackPaths()
     )
     return true
-  } catch {
+  } catch (cause) {
+    reportError(cause, {
+      errorType: 'failure_writing_extension_pack_setting',
+      surface: 'platform'
+    })
     editingEnabledExtensionPacks.value[path] = previousEnabled
-    try {
-      await settingStore.set(
-        'Comfy.Extension.DisabledPacks',
-        previousDisabledPaths
-      )
-    } catch {
-      return false
-    }
+    await settingStore
+      .set('Comfy.Extension.DisabledPacks', previousDisabledPaths)
+      .catch(() => undefined)
     return false
   } finally {
     isSavingExtensionPacks.value = false

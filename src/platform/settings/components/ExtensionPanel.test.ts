@@ -5,9 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { testI18n } from '@/utils/__tests__/testI18n'
 import { useToast } from '@/components/ui/toast/toastStore'
 import { useSettingStore } from '@/platform/settings/settingStore'
+import { reportError } from '@/platform/telemetry/reportError'
 import { useExtensionStore } from '@/stores/extensionStore'
 
 import ExtensionPanel from './ExtensionPanel.vue'
+
+vi.mock(import('@/platform/telemetry/reportError'))
 
 function registerExtensions(...names: string[]) {
   const extensionStore = useExtensionStore()
@@ -272,9 +275,8 @@ describe('ExtensionPanel', () => {
     const user = userEvent.setup()
     const settingStore = useSettingStore()
     useExtensionStore().loadExtensionPackPaths(['/extensions/a/'], [])
-    const setSetting = vi
-      .spyOn(settingStore, 'set')
-      .mockRejectedValue(new Error('setting unavailable'))
+    const failure = new Error('setting unavailable')
+    const setSetting = vi.spyOn(settingStore, 'set').mockRejectedValue(failure)
 
     renderPanel()
     const packSwitch = screen.getByRole('switch', {
@@ -293,6 +295,10 @@ describe('ExtensionPanel', () => {
       'Comfy.Extension.DisabledPacks',
       []
     )
+    expect(reportError).toHaveBeenCalledWith(failure, {
+      errorType: 'failure_writing_extension_pack_setting',
+      surface: 'platform'
+    })
     expect(useToast().toasts).toContainEqual(
       expect.objectContaining({
         kind: 'error',
