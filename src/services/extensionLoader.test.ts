@@ -309,7 +309,8 @@ describe('extension loading', () => {
         }
       })
       vi.spyOn(api, 'getExtensions').mockResolvedValue([
-        '/extensions/pack-a/main.js'
+        '/extensions/pack-a/main.js',
+        '/extensions/pack-b/main.js'
       ])
       vi.spyOn(api, 'fileURL').mockReturnValue(
         'data:text/javascript,globalThis.customExtensionLoaded()'
@@ -320,7 +321,8 @@ describe('extension loading', () => {
       expect(customExtensionLoaded).not.toHaveBeenCalled()
       expect(useExtensionStore().isCoreExtension('core.test')).toBe(true)
       expect(useExtensionStore().extensionPaths).toEqual([
-        '/extensions/pack-a/'
+        '/extensions/pack-a/',
+        '/extensions/pack-b/'
       ])
     })
 
