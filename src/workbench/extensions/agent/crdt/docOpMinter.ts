@@ -15,7 +15,6 @@ import type {
   NodeId as WireNodeId,
   PromotedHostWrite,
   SubgraphDefinition,
-  WidgetValuesForm,
   WorkflowNode
 } from '@comfyorg/comfy-multi-player'
 import { isEqual } from 'es-toolkit'
@@ -32,7 +31,6 @@ import type { Subgraph } from '@/lib/litegraph/src/subgraph/Subgraph'
 import type { SubgraphNode } from '@/lib/litegraph/src/subgraph/SubgraphNode'
 import type { ISerialisedNode } from '@/lib/litegraph/src/types/serialisation'
 import { isWidgetValue } from '@/lib/litegraph/src/types/widgets'
-import type { IBaseWidget } from '@/lib/litegraph/src/types/widgets'
 import { reportError } from '@/platform/telemetry/reportError'
 import { useNodeDefStore } from '@/stores/nodeDefStore'
 import type { DynamicComboSelection } from '@/stores/nodeDefStore'
@@ -40,7 +38,6 @@ import { useWidgetValueStore } from '@/stores/widgetValueStore'
 import type { RootGraphId } from '@/types/graphScopeId'
 import type { NodeId } from '@/types/nodeId'
 import { widgetId } from '@/types/widgetId'
-import type { WidgetState } from '@/types/widgetState'
 import {
   findNodeInHierarchy,
   findSubgraphByUuid,
@@ -55,6 +52,11 @@ import {
 import type { GraphOperation } from './graphOperations'
 import type { DocPromotedWidgets } from './agentSubgraphDefinitions'
 import { reportLostEdit } from './reportLostEdit'
+import {
+  isValueWidget,
+  provenWidgetValuesForm,
+  valueWidgetsOnly
+} from './widgetValuesForm'
 
 export interface DocOpMinterDeps {
   /** Slice 00's product gate. */
@@ -145,6 +147,7 @@ type PendingOp =
   | { kind: 'op'; operation: GraphOperation }
 
 type PendingGrows = { base: number; names: readonly string[] }
+type SlotGrow = MissingSlotGrowth['grow']
 interface DeferredDynamicConnect {
   kind: 'connect'
   operation: Omit<
@@ -171,6 +174,7 @@ interface PendingDynamicSlot {
   rootGraphId: string
   nodeId: NodeId
   inputName: string
+  grow: SlotGrow
   growLinkId: WireNodeId
   since: number
   sent: boolean
@@ -205,67 +209,13 @@ export function wireNodeSnapshot(node: LGraphNode): WorkflowNode | null {
   const snapshot = { ...rest, flags } satisfies WorkflowNode
   if (!named || node.isVirtualNode) return snapshot
   const values = valueWidgetsOnly(node, named)
-  const form = nodeLocalWidgetForm(node, values)
+  // The form is proven against the POST-HOOK serialization, not derived from
+  // the live widget list alone: `serialize()` above already ran the extension
+  // serialize hook, which may have replaced either widget-values field.
+  const form = provenWidgetValuesForm(node, values, serialized)
   return form
     ? { ...snapshot, widgets_values: values, widgets_values_form: form }
     : { ...snapshot, widgets_values: values }
-}
-
-const VALUE_DEPENDENT_LAYOUT_INPUT_TYPES = new Set([
-  'COMFY_AUTOGROW_V3',
-  'COMFY_DYNAMICCOMBO_V3',
-  'COMFY_DYNAMICGROUP_V3'
-])
-
-function nodeLocalWidgetForm(
-  node: LGraphNode,
-  values: Record<string, unknown>
-): WidgetValuesForm | undefined {
-  const definition = useNodeDefStore().fromLGraphNode(node)
-  const layoutDependsOnValues = Object.values(definition?.inputs ?? {}).some(
-    (spec) => VALUE_DEPENDENT_LAYOUT_INPUT_TYPES.has(spec.type)
-  )
-  if (layoutDependsOnValues) return undefined
-  const order = (node.widgets ?? [])
-    .map((widget) => widget.name)
-    .filter((name) => Object.hasOwn(values, name))
-  const isClosed =
-    order.length > 0 &&
-    order.length === Object.keys(values).length &&
-    order.every((name) => name.length > 0) &&
-    new Set(order).size === order.length
-  return isClosed ? { order } : undefined
-}
-
-function valueWidgetsOnly(
-  node: LGraphNode,
-  named: object
-): Record<string, unknown> {
-  const filtered: Record<string, unknown> = {}
-  const rootGraphId = node.graph?.rootGraph.id
-  const widgetValueStore = useWidgetValueStore()
-  for (const [name, value] of Object.entries(named)) {
-    const widget = node.widgets?.find((candidate) => candidate.name === name)
-    const stored = rootGraphId
-      ? widgetValueStore.getWidget(widgetId(rootGraphId, node.id, name))
-      : undefined
-    if (isValueWidget(widget, stored)) filtered[name] = value
-  }
-  return filtered
-}
-
-function isValueWidget(
-  widget: IBaseWidget | undefined,
-  stored?: WidgetState
-): boolean {
-  if (!widget && !stored) return false
-  // A destructuring default fires on absent AND present-but-undefined alike,
-  // which is what `IBaseWidget`'s own optional fields mean: the live widget
-  // did not state this, so the registration the intent was keyed by answers.
-  // One construct for both fields, so the two halves of the guard cannot
-  // drift apart again.
-  const { type = stored?.type, serialize = stored?.serialize } = widget ?? {}
-  return type !== 'button' && serialize !== false
 }
 
 function nodeKey(graphId: string, nodeId: NodeId | WireNodeId): string {
@@ -432,21 +382,85 @@ function withoutCancelledAdd(
   })
 }
 
-function withPredictedSlotsShifted(
+function predictedSlotOf(
+  entry: PendingOp,
+  toNode: WireNodeId
+): number | undefined {
+  if (entry.kind !== 'op') return undefined
+  const { operation } = entry
+  if (operation.op !== 'connect' && operation.op !== 'disconnect')
+    return undefined
+  if (operation.to_node !== toNode) return undefined
+  return typeof operation.to_slot === 'number' ? operation.to_slot : undefined
+}
+
+function queuedGrowName(
+  entry: PendingOp,
+  toNode: WireNodeId
+): string | undefined {
+  if (entry.kind !== 'op' || entry.operation.op !== 'connect') return undefined
+  const { operation } = entry
+  return operation.to_node === toNode ? operation.grow?.name : undefined
+}
+
+/**
+ * Re-predicts every queued slot on `toNode` once an unechoed grow is
+ * cancelled. The first queued connect that predicted the cancelled slot (a
+ * replacement link) inherits the grow, so the slot is still created; every
+ * other prediction is re-derived by name from the order the surviving grows
+ * land in. A prediction whose slot no grow creates any more is dropped.
+ */
+function withCancelledGrowReconciled(
   pending: PendingOp[],
   toNode: WireNodeId,
-  cancelledSlot: number
-): PendingOp[] {
-  return pending.map((entry) => {
-    if (entry.kind !== 'op') return entry
-    const { operation } = entry
-    if (operation.op !== 'connect' && operation.op !== 'disconnect')
+  grows: PendingGrows,
+  cancelled: SlotGrow
+): { pending: PendingOp[]; names: string[] } {
+  const cancelledSlot = grows.base + grows.names.indexOf(cancelled.name)
+  const heir = pending.findIndex(
+    (entry) =>
+      entry.kind === 'op' &&
+      entry.operation.op === 'connect' &&
+      predictedSlotOf(entry, toNode) === cancelledSlot
+  )
+  const inherited = pending.map((entry, index): PendingOp => {
+    if (
+      index !== heir ||
+      entry.kind !== 'op' ||
+      entry.operation.op !== 'connect'
+    )
       return entry
-    const slot = operation.to_slot
-    if (operation.to_node !== toNode || typeof slot !== 'number') return entry
-    if (slot <= cancelledSlot) return entry
-    return { kind: 'op', operation: { ...operation, to_slot: slot - 1 } }
+    const { to_slot: _slot, grow: _grow, ...connect } = entry.operation
+    return {
+      kind: 'op',
+      operation: { ...connect, to_slot: null, grow: cancelled }
+    }
   })
+  const queued = inherited
+    .map((entry) => queuedGrowName(entry, toNode))
+    .filter((name): name is string => !!name && grows.names.includes(name))
+  const names = [
+    ...grows.names.filter(
+      (name) => name !== cancelled.name && !queued.includes(name)
+    ),
+    ...queued
+  ]
+  const reconciled = inherited.flatMap((entry): PendingOp[] => {
+    const slot = predictedSlotOf(entry, toNode)
+    const predicted = slot === undefined ? -1 : slot - grows.base
+    if (entry.kind !== 'op' || predicted < 0 || predicted >= grows.names.length)
+      return [entry]
+    const index = names.indexOf(grows.names[predicted])
+    if (index < 0) return []
+    const { operation } = entry
+    const to_slot = grows.base + index
+    if (operation.op === 'disconnect')
+      return [{ kind: 'op', operation: { ...operation, to_slot } }]
+    if (operation.op === 'connect' && operation.grow == null)
+      return [{ kind: 'op', operation: { ...operation, to_slot } }]
+    return [entry]
+  })
+  return { pending: reconciled, names }
 }
 
 /**
@@ -1058,8 +1072,7 @@ export function attachDocOpMinter(deps: DocOpMinterDeps): DocOpMinter {
     pendingGrows.delete(key)
     if (pendingAdds.get(key) === event.node) {
       pendingAdds.delete(key)
-      forgetCancelledGrows(event.graph.id, event.node.id)
-      pending = withoutCancelledAdd(pending, event.node.id)
+      cancelAdd(event.graph.id, event.node.id)
       return
     }
     schedule({
@@ -1115,34 +1128,37 @@ export function attachDocOpMinter(deps: DocOpMinterDeps): DocOpMinter {
     )
   }
 
-  function forgetCancelledGrows(graphId: string, nodeId: NodeId): void {
-    for (const entry of pending) {
-      if (entry.kind !== 'op' || entry.operation.op !== 'connect') continue
+  function cancelAdd(graphId: string, nodeId: NodeId): void {
+    const cancelledGrows = pending.flatMap((entry) => {
+      if (entry.kind !== 'op' || entry.operation.op !== 'connect') return []
       const { from_node, to_node, grow } = entry.operation
-      if (grow && (from_node === nodeId || to_node === nodeId))
-        forgetCancelledGrow(nodeKey(graphId, to_node), to_node, grow.name)
-    }
+      return grow && (from_node === nodeId || to_node === nodeId)
+        ? [{ toNode: to_node, grow }]
+        : []
+    })
+    pending = withoutCancelledAdd(pending, nodeId)
+    for (const { toNode, grow } of cancelledGrows)
+      forgetCancelledGrow(nodeKey(graphId, toNode), toNode, grow)
   }
 
   function forgetCancelledGrow(
     key: string,
     toNode: WireNodeId,
-    name: string
+    grow: SlotGrow
   ): void {
     const grows = pendingGrows.get(key)
-    const index = grows?.names.indexOf(name) ?? -1
-    if (grows === undefined || index < 0) return
-    const names = grows.names.filter((other) => other !== name)
-    if (names.length === 0) pendingGrows.delete(key)
-    else pendingGrows.set(key, { base: grows.base, names })
-    pending = withPredictedSlotsShifted(pending, toNode, grows.base + index)
+    if (grows === undefined || !grows.names.includes(grow.name)) return
+    const reconciled = withCancelledGrowReconciled(pending, toNode, grows, grow)
+    pending = reconciled.pending
+    if (reconciled.names.length === 0) pendingGrows.delete(key)
+    else pendingGrows.set(key, { base: grows.base, names: reconciled.names })
   }
 
   function forgetDynamicSlotGrow(state: PendingDynamicSlot): void {
     forgetCancelledGrow(
       nodeKey(state.rootGraphId, state.nodeId),
       state.nodeId,
-      state.inputName
+      state.grow
     )
   }
 
@@ -1218,6 +1234,7 @@ export function attachDocOpMinter(deps: DocOpMinterDeps): DocOpMinter {
       rootGraphId,
       nodeId: link.target_id,
       inputName: input.name,
+      grow: growth.grow,
       growLinkId: link.id,
       since: performance.now(),
       sent: false,
